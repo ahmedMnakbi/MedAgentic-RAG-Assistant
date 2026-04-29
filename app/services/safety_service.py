@@ -28,10 +28,23 @@ class SafetyService:
                 r"\bhow many\s*(mg|mcg|g|ml|tablets|pills|capsules)\b",
                 r"\bwhat dose should i take\b",
                 r"\bwhat dosage should i take\b",
+                r"\bwhat dosage\b.*\bfor\b",
+                r"\bwhat dose\b.*\bfor\b",
                 r"\bhow often should i take\b",
                 r"\bcan i take \d+\s*(mg|mcg|g|ml)\b",
+                r"\bis \d+(\.\d+)?\s*(mg|mcg|g|ml)\b.*\b(good|safe|correct|appropriate|recommended|enough|too much|too little)\b",
+                r"\b(good|safe|correct|appropriate|recommended)\s+(dose|dosage)\b",
             )
         ]
+        self.dosage_unit_pattern = re.compile(
+            r"\b\d+(\.\d+)?\s*(mg|mcg|g|ml|tablets?|pills?|capsules?)\b",
+            re.IGNORECASE,
+        )
+        self.dosage_term_pattern = re.compile(r"\b(dose|dosage|dosing)\b", re.IGNORECASE)
+        self.dosage_advice_pattern = re.compile(
+            r"\b(good|safe|correct|appropriate|recommended|enough|too much|too little|should i take)\b",
+            re.IGNORECASE,
+        )
         self.triage_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
@@ -67,7 +80,7 @@ class SafetyService:
                 category="unsafe_triage",
                 reason="Emergency triage and urgent care guidance are out of scope.",
             )
-        if self._matches_any(question, self.dosage_patterns):
+        if self._is_unsafe_dosage_request(question):
             return SafetyAssessment(
                 allowed=False,
                 category="unsafe_dosage",
@@ -112,3 +125,12 @@ class SafetyService:
     @staticmethod
     def _matches_any(text: str, patterns: list[re.Pattern[str]]) -> bool:
         return any(pattern.search(text) for pattern in patterns)
+
+    def _is_unsafe_dosage_request(self, question: str) -> bool:
+        if self._matches_any(question, self.dosage_patterns):
+            return True
+
+        has_unit = bool(self.dosage_unit_pattern.search(question))
+        has_dosage_term = bool(self.dosage_term_pattern.search(question))
+        has_advice_term = bool(self.dosage_advice_pattern.search(question))
+        return has_unit and (has_dosage_term or has_advice_term)
