@@ -157,6 +157,10 @@ uvicorn app.main:app --reload
 - Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - Health check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 
+Note:
+
+- the first PDF upload may be slower on a fresh machine because the embedding model can download from Hugging Face the first time it is used
+
 ## Suggested First Demo Flow
 
 1. Open Swagger.

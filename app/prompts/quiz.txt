@@ -5,4 +5,7 @@ Create study quiz questions from the provided medical document context only.
 - Output a JSON array.
 - Each item must contain: question, options, correct_answer, explanation, source_pages.
 - source_pages must be an array of integers.
+- Base every question, correct answer, and explanation only on the provided context.
+- Do not add extra medical facts beyond what is explicitly supported by the source.
+- Keep explanations short and source-grounded.
 - Do not provide diagnosis, dosage advice, emergency triage, or personalized treatment.
