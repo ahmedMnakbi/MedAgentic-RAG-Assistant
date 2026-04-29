@@ -1,112 +1,80 @@
 # MedAgentic RAG Assistant
 
-MedAgentic RAG Assistant is a FastAPI backend for **medical education and document understanding only**. It uses uploaded medical PDFs, retrieval, and tool-style routes to support source-grounded Q&A, summarization, simplification, quiz generation, prompt enhancement, and PubMed metadata lookup.
+MedAgentic RAG Assistant is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, explore PubMed metadata, and improve prompts through an internal prompt lab.
 
-It is designed as an **API-first student portfolio project** with a clear safety boundary, simple architecture, Swagger-based testing, and realistic educational use cases.
-
-## What The Project Does
-
-- upload medical PDFs
-- extract and chunk the text
-- create embeddings with `all-MiniLM-L6-v2`
-- store vectors in ChromaDB
-- answer questions from uploaded documents
-- summarize, simplify, and generate quiz questions
-- search PubMed metadata through NCBI E-utilities
-- refuse unsafe clinical requests
-
-## Demo Value
-
-This repository is a good portfolio/demo project because it shows:
-
-- FastAPI backend design
-- modular service architecture
-- retrieval-augmented generation
-- vector database usage
-- external API integration
-- prompt design
-- medical safety boundaries
-- test coverage for core behaviors
+`v1.1` adds a modern class-demo web interface at `/` while keeping Swagger at `/docs` for developer testing.
 
 ## Safety Boundary
 
-- This project is **not** a diagnosis, triage, or treatment tool.
+- This project is **not** a diagnosis, dosage, triage, or treatment system.
 - It must refuse:
   - diagnosis requests
   - medication dosage requests
   - emergency triage requests
   - personalized treatment recommendations
-- It is intended for study demos, portfolio use, and educational document analysis.
+- It is built for learning, demonstrations, and portfolio use.
 
-## v1 Features
+## What v1.1 Includes
 
 - FastAPI backend with Swagger docs
+- interactive web UI at `/`
 - `GET /health`
 - `GET /api/documents`
 - `POST /api/documents/upload`
 - `POST /api/chat/ask`
+- `GET /api/prompts/search`
+- `GET /api/prompts/{prompt_id}`
+- `POST /api/prompts/improve`
 - PDF validation, parsing, chunking, embeddings, and Chroma persistence
-- Rule-based router for `rag`, `summarize`, `simplify`, `quiz`, `pubmed`, and `prompt_enhance`
-- Safety-first refusal logic
-- PubMed metadata search via NCBI E-utilities
+- rule-based routing for `rag`, `summarize`, `simplify`, `quiz`, `pubmed`, and `prompt_enhance`
+- safety-first refusal logic
+- PubMed metadata search through NCBI E-utilities
+- internal prompt library and prompt improver inspired by Prompt Finder & Enhancer / prompts.chat
+
+## What v1.1 Still Does Not Include
+
+- authentication
+- deployment
+- OCR for scanned PDFs
+- LangGraph orchestration
+- multi-user accounts
+- live prompts.chat or MCP dependency
+- PubMed abstract snippets or synthesis
+
+## Interface Map
+
+- Web app: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 
 ## High-Level Architecture
 
 ```mermaid
 flowchart TD
-    A["User / Swagger"] --> B["FastAPI Routes"]
+    A["User Web UI / Swagger"] --> B["FastAPI Routes"]
     B --> C["Safety Guardrail"]
     C --> D["Rule-Based Router"]
     D --> E["Document RAG Path"]
     D --> F["PubMed Metadata Path"]
-    D --> G["Prompt Enhancer"]
+    D --> G["Prompt Lab Path"]
     E --> H["PDF Parsing + Chunking"]
     H --> I["Embeddings"]
     I --> J["ChromaDB"]
     J --> K["Retrieved Chunks"]
     K --> L["Groq LLM Response"]
     F --> M["NCBI E-utilities"]
+    G --> N["Prompt Library + Prompt Improver"]
 ```
 
-## Main Endpoints
+## External Services You Need
 
-- `GET /health`
-  - quick server status check
-- `GET /api/documents`
-  - list uploaded documents and metadata
-- `POST /api/documents/upload`
-  - upload and index a text-based PDF
-- `POST /api/chat/ask`
-  - ask a question or choose a specific mode
-
-## Excluded From v1
-
-- frontend
-- authentication
-- deployment
-- LangGraph orchestration
-- OCR for scanned PDFs
-- multi-user features
-- prompts.chat or MCP live integration
-
-## Environment
-
-Create a `.env` file from `.env.example` and set:
-
-- `GROQ_API_KEY`
-- `GROQ_MODEL`
-- `NCBI_EMAIL`
-- optionally `NCBI_API_KEY`
-
-Recommended: Python 3.12 for the smoothest local experience with the RAG stack.
-
-External services used in v0.5:
-
-- Groq console: [https://console.groq.com/](https://console.groq.com/)
+- Groq: [https://console.groq.com/](https://console.groq.com/)
+  - required for RAG answers, summaries, simplification, quizzes, and live prompt improvement
 - PubMed: [https://pubmed.ncbi.nlm.nih.gov/](https://pubmed.ncbi.nlm.nih.gov/)
+  - required for literature metadata search
 - NCBI E-utilities docs: [https://www.ncbi.nlm.nih.gov/books/NBK25497/](https://www.ncbi.nlm.nih.gov/books/NBK25497/)
 
-## Run From GitHub Step By Step
+## Environment Setup
 
 1. Clone the repository:
 
@@ -133,57 +101,62 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-5. Create your local env file:
+5. Create a local env file:
 
 ```bash
 Copy-Item .env.example .env
 ```
 
-6. Open `.env` and add:
+6. Open `.env` and set:
 
 - `GROQ_API_KEY`
 - `GROQ_MODEL`
 - `NCBI_EMAIL`
 - optionally `NCBI_API_KEY`
 
-7. Start the API:
+Recommended runtime: Python `3.12`.
+
+## Run The App
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-8. Open:
+Then open:
 
-- Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- Health check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+- web app: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 Note:
 
-- the first PDF upload may be slower on a fresh machine because the embedding model can download from Hugging Face the first time it is used
+- the first PDF upload can be slower on a fresh machine because the embedding model may download once
 
-## Suggested First Demo Flow
+## Main Endpoints
 
-1. Open Swagger.
-2. Run `GET /health` and show `{"status": "ok"}`.
-3. Run `POST /api/chat/ask` with an unsafe dosage request and show refusal.
-4. Upload a text-based medical PDF.
-5. Run `GET /api/documents` and show the stored metadata.
-6. Ask a document-grounded question in `rag` mode.
-7. Ask for a summary in `summarize` mode.
-8. Ask for quiz questions in `quiz` mode.
-9. Run a `pubmed` query and show metadata-only results.
+### `GET /health`
 
-## API Notes
-
-### `POST /api/documents/upload`
-
-- accepts PDF files only
-- validates extension, content type when present, size, and PDF signature
-- rejects corrupted PDFs and PDFs without extractable text
+- simple server status check
 
 ### `GET /api/documents`
 
 - lists uploaded document metadata
+- returns:
+  - `document_id`
+  - `filename`
+  - `page_count`
+  - `chunk_count`
+  - `uploaded_at`
+
+### `POST /api/documents/upload`
+
+- uploads and indexes a PDF
+- validates:
+  - `.pdf` extension
+  - content type when present
+  - max file size
+  - PDF signature
+  - corrupted PDF handling
+  - empty-text PDF handling
 
 ### `POST /api/chat/ask`
 
@@ -191,7 +164,7 @@ Request example:
 
 ```json
 {
-  "question": "Summarize the key points about heart failure from the uploaded document.",
+  "question": "Summarize what the uploaded document says about Addison's disease.",
   "mode": "auto",
   "document_ids": null,
   "enhance_prompt": false,
@@ -199,79 +172,134 @@ Request example:
 }
 ```
 
-Possible response statuses:
+Possible statuses:
 
 - `ok`
 - `refused`
 - `no_source`
 
-No-source behavior:
+Rules:
 
-- if retrieval does not find a useful match, the assistant says the answer was not found in the uploaded documents
+- unsafe medical requests are refused before any retrieval or generation
+- if retrieval does not find useful chunks, the assistant says the answer was not found in the uploaded documents
 
-Example unsafe request:
+### `GET /api/prompts/search`
+
+- searches the internal prompt library
+- supports:
+  - `query`
+  - `limit`
+  - `type`
+  - `category`
+  - `tag`
+
+### `GET /api/prompts/{prompt_id}`
+
+- returns one prompt template plus its variables
+
+### `POST /api/prompts/improve`
+
+- improves a rough prompt while preserving meaning
+- adds structure, output expectations, and medical-education safety constraints
+- does not add new medical facts
+
+Example:
 
 ```json
 {
-  "question": "How many mg of ibuprofen should I take?"
+  "prompt": "summarize a medical topic for students",
+  "outputType": "text",
+  "outputFormat": "structured_json"
 }
 ```
 
-Expected result:
+## Web UI Overview
 
-- `status = "refused"`
-- educational-only refusal message
+The class-demo interface at `/` has three areas:
+
+- `Document Dock`
+  - upload PDFs
+  - view indexed documents
+- `Assistant Lab`
+  - ask questions
+  - switch between modes
+  - compare `top_k`
+  - toggle prompt enhancement
+- `Prompt Lab`
+  - search built-in prompt templates
+  - inspect prompt variables
+  - improve prompts with a skill-like flow
+
+Swagger remains available for low-level API testing.
+
+## Prompt Lab Design
+
+The prompt features are inspired by Prompt Finder & Enhancer / prompts.chat, but implemented locally for this project.
+
+Current support:
+
+- prompt search
+- prompt detail lookup
+- prompt improvement
+
+Current limitation:
+
+- no live prompts.chat dependency
+- no remote prompt marketplace sync
+
+## Suggested Demo Flow
+
+1. Open the web app at `/`.
+2. Show the health pill and the Swagger link.
+3. Upload a text-based medical PDF.
+4. Ask an unsafe dosage question and show refusal.
+5. Ask a grounded study question and show sources.
+6. Switch to `summarize`, `simplify`, and `quiz`.
+7. Use a PubMed question to show literature metadata.
+8. Open `Prompt Lab` and improve a rough prompt live.
 
 ## Project Structure
 
 ```text
 app/
   api/routes/              # FastAPI endpoints
-  clients/                 # Wrappers for Groq, Chroma, PDF loader, NCBI
+  clients/                 # Groq, Chroma, PDF loader, NCBI wrappers
   core/                    # config, constants, exceptions
-  prompts/                 # system prompt templates
+  prompts/                 # prompt templates for generation
   schemas/                 # request/response models
   services/                # business logic
+  web/                     # class-demo web interface
   storage/                 # local runtime storage
   utils/                   # helper utilities
 tests/                     # automated tests
 ```
 
-## Limitations In v0.5
-
-- educational use only
-- no diagnosis or triage
-- no medication dosage guidance
-- no authentication
-- no frontend
-- no OCR for scanned PDFs
-- no deployment pipeline
-- PubMed is metadata-only in this version
-
-## Suggested Next Improvements
-
-- add post-generation safety checks
-- add abstract snippets for PubMed v1.1
-- improve router heuristics with fallback classification
-- support better source citation formatting
-- add Docker support
-- add a lightweight frontend later
-
 ## Testing
+
+Run the automated suite:
 
 ```bash
 pytest
 ```
 
-## PubMed v1 Scope
+Current local baseline for `v1.1`:
 
-PubMed integration is metadata-only in v1:
+- `32` tests passing
 
-- PMID
-- title
-- authors
-- journal
-- publication date
-- PubMed URL
+## Current Limitations
 
-Abstract snippets and synthesis are intentionally deferred to v1.1.
+- educational use only
+- no diagnosis or treatment
+- no OCR for scanned PDFs
+- PubMed is metadata-only
+- no authentication or multi-user support
+- no deployment pipeline yet
+
+## Good Next Steps After v1.1
+
+- add PubMed abstract snippets and optional synthesis
+- add post-generation safety checking
+- add richer source citation formatting in the UI
+- add Docker for easier classroom demos
+- add conversation history or session memory
+- add exportable study notes and quiz sets

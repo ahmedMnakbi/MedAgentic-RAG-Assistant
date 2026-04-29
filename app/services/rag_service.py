@@ -7,7 +7,7 @@ from app.clients.vectorstore_client import VectorStoreClient
 from app.core.config import Settings
 from app.schemas.chat import SourceRef
 from app.utils.metadata import build_source_ref
-from app.utils.text import is_useful_retrieval
+from app.utils.text import is_useful_retrieval, strip_unsafe_guidance
 
 
 @dataclass(slots=True)
@@ -67,5 +67,8 @@ class RagService:
         for chunk in chunks:
             filename = chunk.metadata.get("filename", "document")
             page = int(chunk.metadata.get("page", 0)) + 1
-            parts.append(f"[Source: {filename}, page {page}]\n{chunk.text}")
+            safe_text = strip_unsafe_guidance(chunk.text)
+            if not safe_text:
+                continue
+            parts.append(f"[Source: {filename}, page {page}]\n{safe_text}")
         return "\n\n".join(parts)

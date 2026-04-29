@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MedAgentic RAG Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Educational Medical RAG</p>
+          <h1>MedAgentic RAG Assistant</h1>
+          <p class="subhead">
+            Upload medical PDFs, run source-grounded study workflows, explore PubMed metadata,
+            and demo the system through a cleaner interface while keeping Swagger for developers.
+          </p>
+        </div>
+        <div class="topbar-actions">
+          <div class="status-pill" id="health-pill">
+            <span class="status-dot"></span>
+            <span id="health-text">Checking API</span>
+          </div>
+          <a class="ghost-link" href="/docs" target="_blank" rel="noreferrer">Open Swagger</a>
+        </div>
+      </header>
+
+      <section class="hero-grid">
+        <article class="hero-card">
+          <p class="card-kicker">Class Demo Flow</p>
+          <h2>Upload, ask, compare, explain.</h2>
+          <p>
+            Use the left side to ingest a PDF and manage indexed documents. Use the right side to
+            test RAG, summaries, simplification, quizzes, PubMed, and prompt engineering.
+          </p>
+          <div class="hero-notes">
+            <span>Safety-first refusal</span>
+            <span>Source-grounded answers</span>
+            <span>Prompt Lab included</span>
+          </div>
+        </article>
+        <article class="hero-card hero-card-accent">
+          <p class="card-kicker">Important Note</p>
+          <h2>First upload can be slower.</h2>
+          <p>
+            On a fresh machine the embedding model may download during the first indexing pass.
+            After that, uploads and retrieval should feel much faster.
+          </p>
+        </article>
+      </section>
+
+      <main class="workspace-grid">
+        <section class="panel stack-panel">
+          <div class="panel-header">
+            <div>
+              <p class="card-kicker">Document Dock</p>
+              <h2>PDF intake</h2>
+            </div>
+          </div>
+
+          <form id="upload-form" class="stack-form">
+            <label class="field">
+              <span>Upload a medical PDF</span>
+              <input id="pdf-file" name="file" type="file" accept=".pdf,application/pdf" required />
+            </label>
+            <button class="primary-button" type="submit">Upload and index</button>
+            <p class="microcopy" id="upload-status">No upload in progress.</p>
+          </form>
+
+          <div class="panel-divider"></div>
+
+          <div class="section-headline">
+            <h3>Indexed documents</h3>
+            <button class="text-button" id="refresh-docs" type="button">Refresh</button>
+          </div>
+          <div id="documents-list" class="document-list empty-state">
+            No documents loaded yet.
+          </div>
+        </section>
+
+        <section class="panel stack-panel">
+          <div class="panel-header">
+            <div>
+              <p class="card-kicker">Assistant Lab</p>
+              <h2>Ask the system</h2>
+            </div>
+          </div>
+
+          <form id="chat-form" class="stack-form">
+            <label class="field">
+              <span>Question or request</span>
+              <textarea
+                id="chat-question"
+                name="question"
+                rows="5"
+                placeholder="Example: Summarize what the uploaded document says about Addison's disease."
+                required
+              ></textarea>
+            </label>
+
+            <div class="compact-grid">
+              <label class="field">
+                <span>Mode</span>
+                <select id="chat-mode" name="mode">
+                  <option value="auto">auto</option>
+                  <option value="rag">rag</option>
+                  <option value="summarize">summarize</option>
+                  <option value="simplify">simplify</option>
+                  <option value="quiz">quiz</option>
+                  <option value="pubmed">pubmed</option>
+                  <option value="prompt_enhance">prompt_enhance</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>top_k</span>
+                <input id="chat-top-k" name="top_k" type="number" min="1" max="10" value="4" />
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <label class="switch">
+                <input id="all-docs-toggle" type="checkbox" checked />
+                <span>Search all uploaded documents</span>
+              </label>
+              <label class="switch">
+                <input id="enhance-prompt-toggle" type="checkbox" />
+                <span>Enhance prompt before execution</span>
+              </label>
+            </div>
+
+            <div id="doc-picker-wrap" class="doc-picker-wrap hidden">
+              <p class="microcopy">
+                Select one or more specific documents when you want to narrow retrieval.
+              </p>
+              <div id="doc-picker" class="doc-picker"></div>
+            </div>
+
+            <div class="quick-queries">
+              <button type="button" class="chip-button" data-query="Summarize what the uploaded document says about Addison's disease.">
+                Summary prompt
+              </button>
+              <button type="button" class="chip-button" data-query="Explain the uploaded document in simpler terms.">
+                Simplify prompt
+              </button>
+              <button type="button" class="chip-button" data-query="PubMed studies about chronic depression and society">
+                PubMed prompt
+              </button>
+            </div>
+
+            <button class="primary-button" type="submit">Run request</button>
+          </form>
+
+          <div class="panel-divider"></div>
+
+          <div class="section-headline">
+            <h3>Live result</h3>
+            <span class="microcopy">JSON-backed, class-friendly rendering</span>
+          </div>
+          <div id="result-shell" class="result-shell empty-state">
+            Submit a request to see the answer, sources, safety assessment, warnings, and prompt
+            details.
+          </div>
+        </section>
+
+        <section class="panel stack-panel prompt-panel">
+          <div class="panel-header">
+            <div>
+              <p class="card-kicker">Prompt Lab</p>
+              <h2>Search, inspect, improve</h2>
+            </div>
+          </div>
+
+          <form id="prompt-search-form" class="stack-form">
+            <label class="field">
+              <span>Search prompt library</span>
+              <input
+                id="prompt-search-query"
+                name="query"
+                type="text"
+                placeholder="Search prompts for summary, PubMed, quiz, comparison..."
+              />
+            </label>
+
+            <div class="compact-grid">
+              <label class="field">
+                <span>Type</span>
+                <select id="prompt-search-type">
+                  <option value="">All</option>
+                  <option value="TEXT">TEXT</option>
+                  <option value="STRUCTURED">STRUCTURED</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Category</span>
+                <select id="prompt-search-category">
+                  <option value="">All</option>
+                  <option value="medical-education">medical-education</option>
+                  <option value="summarization">summarization</option>
+                  <option value="simplification">simplification</option>
+                  <option value="assessment">assessment</option>
+                  <option value="literature-search">literature-search</option>
+                  <option value="study-tools">study-tools</option>
+                  <option value="teaching">teaching</option>
+                </select>
+              </label>
+            </div>
+
+            <button class="secondary-button" type="submit">Search prompts</button>
+          </form>
+
+          <div id="prompt-search-results" class="prompt-results empty-state">
+            Search results will appear here.
+          </div>
+
+          <div class="panel-divider"></div>
+
+          <div class="section-headline">
+            <h3>Prompt details</h3>
+            <span class="microcopy">Click a result to inspect variables and template text.</span>
+          </div>
+          <div id="prompt-detail" class="prompt-detail empty-state">
+            No prompt selected yet.
+          </div>
+
+          <div class="panel-divider"></div>
+
+          <form id="prompt-improve-form" class="stack-form">
+            <label class="field">
+              <span>Improve a prompt</span>
+              <textarea
+                id="prompt-improve-input"
+                rows="6"
+                placeholder="Paste a rough prompt here, or load one from the library."
+                required
+              ></textarea>
+            </label>
+
+            <div class="compact-grid">
+              <label class="field">
+                <span>Output type</span>
+                <select id="prompt-output-type">
+                  <option value="text">text</option>
+                  <option value="image">image</option>
+                  <option value="video">video</option>
+                  <option value="sound">sound</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Output format</span>
+                <select id="prompt-output-format">
+                  <option value="text">text</option>
+                  <option value="structured_json">structured_json</option>
+                  <option value="structured_yaml">structured_yaml</option>
+                </select>
+              </label>
+            </div>
+
+            <button class="primary-button" type="submit">Improve prompt</button>
+          </form>
+
+          <div id="prompt-improve-result" class="prompt-improve-result empty-state">
+            Improved prompt output will appear here.
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

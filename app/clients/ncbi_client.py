@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.constants import PUBMED_URL_TEMPLATE
 from app.core.exceptions import ExternalServiceError, NotConfiguredError
 from app.schemas.pubmed import PubMedArticle
+from app.utils.text import clean_extracted_text
 
 
 class NCBIClient:
@@ -33,10 +34,12 @@ class NCBIClient:
             articles.append(
                 PubMedArticle(
                     pmid=pmid,
-                    title=html.unescape(item.get("title", "")).strip(),
-                    authors=authors,
-                    journal=html.unescape(item.get("fulljournalname") or item.get("source") or "").strip(),
-                    publication_date=str(item.get("pubdate", "")).strip(),
+                    title=clean_extracted_text(html.unescape(item.get("title", "")).strip()),
+                    authors=[clean_extracted_text(author) for author in authors],
+                    journal=clean_extracted_text(
+                        html.unescape(item.get("fulljournalname") or item.get("source") or "").strip()
+                    ),
+                    publication_date=clean_extracted_text(str(item.get("pubdate", "")).strip()),
                     pubmed_url=PUBMED_URL_TEMPLATE.format(pmid=pmid),
                 )
             )

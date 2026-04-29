@@ -6,6 +6,7 @@ tmp-runtime/
 *.pyc
 *.pyo
 *.pyd
+uvicorn-*.log
 app/storage/uploads/*
 app/storage/chroma/*
 app/storage/documents.json

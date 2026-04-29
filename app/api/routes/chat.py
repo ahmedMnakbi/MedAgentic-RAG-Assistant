@@ -49,12 +49,17 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
     enhanced_prompt = None
 
     if payload.enhance_prompt or mode == "prompt_enhance":
-        enhanced_prompt = services.prompt_enhancer_service.enhance(payload.question, mode)
+        base_enhanced_prompt = services.prompt_enhancer_service.enhance(payload.question, mode)
+        enhanced_prompt = services.prompt_library_service.improve_prompt(
+            prompt=base_enhanced_prompt,
+            output_type="text",
+            output_format="text",
+        ).improved_prompt
         if mode == "prompt_enhance":
             return AskResponse(
                 status="ok",
                 mode_used="prompt_enhance",
-                answer="Prompt enhanced for structured educational use without changing the original intent.",
+                answer="Prompt improved for structured educational use without changing the original intent.",
                 safety=safety,
                 enhanced_prompt=enhanced_prompt,
             )
@@ -91,6 +96,19 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             mode_used=mode,
             enhanced_prompt=enhanced_prompt,
         )
+
+    safe_context = services.rag_service.build_context(retrieved_chunks)
+    if not safe_context:
+        response = _build_no_source_response(
+            payload,
+            safety,
+            mode_used=mode,
+            enhanced_prompt=enhanced_prompt,
+        )
+        response.warnings.append(
+            "Matching passages were omitted because they contained treatment or medication dosing details."
+        )
+        return response
 
     sources = services.rag_service.to_source_refs(retrieved_chunks)
     if mode == "summarize":

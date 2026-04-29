@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import chat, documents, health
+from app.api.routes import chat, documents, health, prompts, web
 from app.clients.embeddings_client import EmbeddingsClient
 from app.clients.groq_client import GroqClient
 from app.clients.ncbi_client import NCBIClient
@@ -19,6 +22,7 @@ from app.services.answer_service import AnswerService
 from app.services.document_registry_service import DocumentRegistryService
 from app.services.document_service import DocumentService
 from app.services.prompt_enhancer_service import PromptEnhancerService
+from app.services.prompt_library_service import PromptLibraryService
 from app.services.pubmed_service import PubMedService
 from app.services.quiz_service import QuizService
 from app.services.rag_service import RagService
@@ -34,10 +38,12 @@ def build_services(settings: Settings) -> SimpleNamespace:
     groq_client = GroqClient(settings)
     document_registry_service = DocumentRegistryService(settings)
     rag_service = RagService(settings, vectorstore_client)
+    prompt_library_service = PromptLibraryService(settings=settings, groq_client=groq_client)
     return SimpleNamespace(
         safety_service=SafetyService(),
         router_service=RouterService(),
         prompt_enhancer_service=PromptEnhancerService(),
+        prompt_library_service=prompt_library_service,
         document_service=DocumentService(
             settings=settings,
             pdf_loader=PDFLoaderClient(),
@@ -56,18 +62,23 @@ def build_services(settings: Settings) -> SimpleNamespace:
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     resolved_settings.ensure_storage_paths()
+    web_dir = Path(__file__).resolve().parent / "web"
 
     app = FastAPI(
         title=resolved_settings.app_name,
         description=APP_DESCRIPTION,
         debug=resolved_settings.app_debug,
+        version="1.1.0",
     )
     app.state.settings = resolved_settings
     app.state.services = build_services(resolved_settings)
 
+    app.mount("/static", StaticFiles(directory=web_dir / "static"), name="static")
+    app.include_router(web.router)
     app.include_router(health.router)
     app.include_router(documents.router, prefix=resolved_settings.api_prefix)
     app.include_router(chat.router, prefix=resolved_settings.api_prefix)
+    app.include_router(prompts.router, prefix=resolved_settings.api_prefix)
 
     @app.exception_handler(AppError)
     async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
