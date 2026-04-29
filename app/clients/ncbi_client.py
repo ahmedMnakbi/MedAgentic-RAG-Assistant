@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import time
 from typing import Any
 
 import httpx
@@ -53,6 +54,7 @@ class NCBIClient:
                 "term": query,
                 "retmode": "json",
                 "retmax": limit,
+                "sort": "relevance",
                 **self._base_params(),
             },
         )
@@ -73,11 +75,16 @@ class NCBIClient:
         url = f"{self.settings.pubmed_base_url}/{endpoint}"
         try:
             with httpx.Client(timeout=20.0) as client:
-                response = client.get(url, params=params)
-                response.raise_for_status()
-                return response.json()
+                for attempt in range(3):
+                    response = client.get(url, params=params)
+                    if response.status_code == 429 and attempt < 2:
+                        time.sleep(1.0 + attempt)
+                        continue
+                    response.raise_for_status()
+                    return response.json()
         except httpx.HTTPError as exc:
             raise ExternalServiceError("PubMed metadata search failed.") from exc
+        raise ExternalServiceError("PubMed metadata search failed.")
 
     def _base_params(self) -> dict[str, Any]:
         params: dict[str, Any] = {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.clients.ncbi_client import NCBIClient
 from app.schemas.pubmed import PubMedArticle
 from app.services.pubmed_service import PubMedService
 
@@ -38,3 +39,51 @@ def test_pubmed_query_normalization_removes_instructional_boilerplate():
     )
 
     assert query == "Addison's disease"
+
+
+def test_pubmed_query_normalization_handles_prompt_placeholders():
+    query = PubMedService._normalize_query(
+        "show me studies of medical content on ${chronic fatigue} from pubMED for ${audience:IT students}, providing a concise overview in a bullet list format with key points and any relevant caveats."
+    )
+
+    assert query == "chronic fatigue"
+
+
+def test_pubmed_query_builder_adds_fielded_relevance_terms():
+    query = PubMedService._build_search_query("anxiety")
+
+    assert '"anxiety"[Title/Abstract]' in query
+    assert '"anxiety"[MeSH Terms]' in query
+
+
+def test_pubmed_search_uses_built_query_before_fallback():
+    captured: list[tuple[str, int]] = []
+
+    class StubNCBIClient:
+        def search_pubmed(self, query: str, *, limit: int = 5):
+            captured.append((query, limit))
+            return []
+
+    service = PubMedService(ncbi_client=StubNCBIClient())
+    service.search("PubMed studies on anxiety", limit=4)
+
+    assert captured[0][1] == 4
+    assert '"anxiety"[Title/Abstract]' in captured[0][0]
+    assert captured[1][0] == "anxiety"
+
+
+def test_esearch_uses_relevance_sort(settings, monkeypatch):
+    client = NCBIClient(settings)
+    observed: dict[str, object] = {}
+
+    def fake_get_json(endpoint: str, params: dict[str, object]) -> dict[str, object]:
+        observed["endpoint"] = endpoint
+        observed["params"] = params
+        return {"esearchresult": {"idlist": []}}
+
+    monkeypatch.setattr(client, "_get_json", fake_get_json)
+
+    client._esearch(query="anxiety", limit=5)
+
+    assert observed["endpoint"] == "esearch.fcgi"
+    assert observed["params"]["sort"] == "relevance"
