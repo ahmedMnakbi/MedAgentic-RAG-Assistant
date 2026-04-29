@@ -4,7 +4,14 @@ from types import SimpleNamespace
 
 from fastapi import APIRouter, Query, Request
 
-from app.schemas.prompts import PromptDetail, PromptImproveRequest, PromptImproveResponse, PromptSearchResult
+from app.schemas.prompts import (
+    PromptDetail,
+    PromptImproveRequest,
+    PromptImproveResponse,
+    PromptSearchResult,
+    PromptSuggestRequest,
+    PromptSuggestResponse,
+)
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
 
@@ -37,6 +44,18 @@ def improve_prompt(payload: PromptImproveRequest, request: Request) -> PromptImp
     services = _get_services(request)
     return services.prompt_library_service.improve_prompt(
         prompt=payload.prompt,
+        output_type=payload.output_type,
+        output_format=payload.output_format,
+    )
+
+
+@router.post("/suggest", response_model=PromptSuggestResponse)
+def suggest_prompt(payload: PromptSuggestRequest, request: Request) -> PromptSuggestResponse:
+    services = _get_services(request)
+    return services.prompt_library_service.suggest_prompts(
+        task=payload.task,
+        audience=payload.audience,
+        mode_hint=payload.mode_hint,
         output_type=payload.output_type,
         output_format=payload.output_format,
     )

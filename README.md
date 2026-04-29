@@ -24,6 +24,7 @@ MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medi
 - `POST /api/chat/ask`
 - `GET /api/prompts/search`
 - `GET /api/prompts/{prompt_id}`
+- `POST /api/prompts/suggest`
 - `POST /api/prompts/improve`
 - `POST /api/pubmed/transform`
 - `POST /api/pubmed/import-url`
@@ -275,6 +276,7 @@ The prompt features are inspired by Prompt Finder & Enhancer / prompts.chat, but
 
 Current support:
 
+- prompt suggestion
 - prompt search
 - prompt detail lookup
 - prompt improvement
@@ -323,7 +325,7 @@ pytest
 
 Current local baseline for `v1.3`:
 
-- `51` tests passing
+- `53` tests passing
 
 ## Current Limitations
 

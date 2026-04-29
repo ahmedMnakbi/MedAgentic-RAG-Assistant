@@ -2,6 +2,7 @@ const state = {
   documents: [],
   latestPubmedPayload: null,
   promptCategory: "",
+  promptSuggestions: [],
   selectedPromptId: null,
   promptResults: [],
 };
@@ -410,6 +411,52 @@ function renderPromptResults(results) {
     .join("");
 }
 
+function renderPromptSuggestions(payload) {
+  const shell = document.getElementById("prompt-suggest-results");
+  state.promptSuggestions = payload.suggestions || [];
+  if (!state.promptSuggestions.length) {
+    shell.className = "prompt-results empty-state";
+    shell.textContent = "No prompt suggestions were generated.";
+    return;
+  }
+
+  shell.className = "prompt-results suggestion-results";
+  shell.innerHTML = `
+    <article class="result-card suggestion-summary-card">
+      <div class="result-topline">
+        <span class="mode-badge">${escapeHtml(payload.inferred_category)}</span>
+        <span class="mode-badge">mode hint: ${escapeHtml(payload.mode_hint_used)}</span>
+      </div>
+      <p class="microcopy">
+        MARA suggested ${state.promptSuggestions.length} prompt variant(s). Pick one, then send it to the improver or straight into Assistant Lab.
+      </p>
+    </article>
+    ${state.promptSuggestions
+      .map(
+        (item) => `
+          <article class="prompt-card suggestion-card">
+            <div class="result-topline">
+              <span class="mode-badge">${escapeHtml(item.category)}</span>
+              ${(item.tags || []).map((tag) => `<span class="mode-badge">${escapeHtml(tag)}</span>`).join("")}
+            </div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.rationale)}</p>
+            <div class="prompt-template mono">${escapeHtml(item.prompt)}</div>
+            <div class="inline-actions">
+              <button class="secondary-button" type="button" data-suggestion-to-improver="${escapeHtml(item.id)}">Send to improver</button>
+              <button class="secondary-button" type="button" data-suggestion-to-chat="${escapeHtml(item.id)}">Use in Assistant Lab</button>
+            </div>
+          </article>
+        `,
+      )
+      .join("")}
+  `;
+
+  if (payload.recommended_recipe_id) {
+    loadPromptDetail(payload.recommended_recipe_id).catch(() => {});
+  }
+}
+
 function renderPromptDetail(prompt) {
   const shell = document.getElementById("prompt-detail");
   if (!prompt) {
@@ -485,6 +532,10 @@ function renderPromptImprovement(payload) {
   `;
 }
 
+function getPromptSuggestionById(suggestionId) {
+  return (state.promptSuggestions || []).find((item) => item.id === suggestionId) || null;
+}
+
 function buildPromptStarter(prompt) {
   const loweredCategory = String(prompt.category || "").toLowerCase();
   if (loweredCategory.includes("literature")) {
@@ -539,6 +590,33 @@ async function searchPrompts(event) {
     await loadPromptDetail(payload[0].id);
   } else {
     renderPromptDetail(null);
+  }
+}
+
+async function suggestPrompts(event) {
+  if (event) {
+    event.preventDefault();
+  }
+  const shell = document.getElementById("prompt-suggest-results");
+  shell.className = "prompt-results empty-state";
+  shell.textContent = "Generating prompt suggestions...";
+
+  try {
+    const payload = await api("/api/prompts/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task: document.getElementById("prompt-suggest-task").value.trim(),
+        audience: document.getElementById("prompt-suggest-audience").value.trim() || null,
+        modeHint: document.getElementById("prompt-suggest-mode").value,
+        outputType: document.getElementById("prompt-output-type")?.value || "text",
+        outputFormat: document.getElementById("prompt-output-format")?.value || "text",
+      }),
+    });
+    renderPromptSuggestions(payload);
+  } catch (error) {
+    shell.className = "prompt-results empty-state";
+    shell.textContent = error.message;
   }
 }
 
@@ -624,7 +702,7 @@ function bindStaticInteractions() {
     document.getElementById("doc-picker-wrap").classList.toggle("hidden", event.target.checked);
   });
 
-  document.querySelectorAll(".chip-button").forEach((button) => {
+  document.querySelectorAll(".quick-queries .chip-button").forEach((button) => {
     button.addEventListener("click", () => {
       document.getElementById("chat-question").value = button.dataset.query || "";
       document.getElementById("chat-question").focus();
@@ -697,6 +775,7 @@ function bindStaticInteractions() {
     }
   });
 
+  document.getElementById("prompt-suggest-form").addEventListener("submit", suggestPrompts);
   document.getElementById("prompt-search-form").addEventListener("submit", searchPrompts);
 
   document.querySelectorAll(".prompt-filter-button").forEach((button) => {
@@ -720,6 +799,27 @@ function bindStaticInteractions() {
     const card = event.target.closest("[data-prompt-id]");
     if (!card) return;
     await loadPromptDetail(card.dataset.promptId);
+  });
+
+  document.getElementById("prompt-suggest-results").addEventListener("click", (event) => {
+    const improveButton = event.target.closest("[data-suggestion-to-improver]");
+    if (improveButton) {
+      const suggestion = getPromptSuggestionById(improveButton.dataset.suggestionToImprover);
+      if (suggestion) {
+        document.getElementById("prompt-improve-input").value = suggestion.prompt;
+        document.getElementById("prompt-improve-input").focus();
+      }
+      return;
+    }
+
+    const chatButton = event.target.closest("[data-suggestion-to-chat]");
+    if (chatButton) {
+      const suggestion = getPromptSuggestionById(chatButton.dataset.suggestionToChat);
+      if (suggestion) {
+        document.getElementById("chat-question").value = suggestion.prompt;
+        document.getElementById("chat-question").focus();
+      }
+    }
   });
 
   document.getElementById("prompt-improve-form").addEventListener("submit", async (event) => {

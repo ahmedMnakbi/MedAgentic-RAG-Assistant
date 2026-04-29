@@ -626,6 +626,26 @@ body::before {
   gap: 12px;
 }
 
+.recipe-browser {
+  margin-top: 6px;
+}
+
+.suggestion-results {
+  gap: 12px;
+}
+
+.suggestion-summary-card {
+  background: linear-gradient(135deg, rgba(0, 138, 122, 0.08), rgba(255, 248, 233, 0.9));
+}
+
+.suggestion-card .prompt-template {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(248, 245, 239, 0.92);
+  border: 1px solid rgba(24, 58, 55, 0.1);
+}
+
 .advanced-prompt-filters {
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.7);

@@ -187,7 +187,7 @@
           <div class="panel-header">
             <div>
               <p class="card-kicker">Prompt Studio</p>
-              <h2>Pick a recipe or refine your own</h2>
+              <h2>Suggest first, refine second</h2>
             </div>
             <img class="panel-illustration" src="/static/mara-prompt.svg" alt="Prompt studio illustration" />
           </div>
@@ -195,68 +195,113 @@
           <div class="prompt-studio">
             <section class="prompt-block">
               <div class="section-headline">
-                <h3>1. Choose a prompt recipe</h3>
-                <span class="microcopy">Search lightly or tap a category. MARA will show the clearest matches first.</span>
+                <h3>1. Describe the task</h3>
+                <span class="microcopy">Tell MARA what you want to do. It will suggest prompt variants before you refine one.</span>
               </div>
 
-              <div class="tag-filter-row">
-                <button type="button" class="chip-button prompt-filter-button active" data-category="">All</button>
-                <button type="button" class="chip-button prompt-filter-button" data-category="summarization">Summary</button>
-                <button type="button" class="chip-button prompt-filter-button" data-category="simplification">Simplify</button>
-                <button type="button" class="chip-button prompt-filter-button" data-category="assessment">Quiz</button>
-                <button type="button" class="chip-button prompt-filter-button" data-category="literature-search">PubMed</button>
-              </div>
-
-              <form id="prompt-search-form" class="stack-form compact-search-form">
+              <form id="prompt-suggest-form" class="stack-form">
                 <label class="field">
-                  <span>Search prompt recipes</span>
-                  <input
-                    id="prompt-search-query"
-                    name="query"
-                    type="text"
-                    placeholder="Try: summary, compare, PubMed, quiz..."
-                  />
+                  <span>Task idea</span>
+                  <textarea
+                    id="prompt-suggest-task"
+                    rows="4"
+                    placeholder="Example: Build a focused PubMed search prompt about reducing anxiety in teens."
+                    required
+                  ></textarea>
                 </label>
 
-                <details class="advanced-prompt-filters">
-                  <summary>Advanced filters</summary>
-                  <div class="compact-grid">
-                    <label class="field">
-                      <span>Type</span>
-                      <select id="prompt-search-type">
-                        <option value="">All</option>
-                        <option value="TEXT">TEXT</option>
-                        <option value="STRUCTURED">STRUCTURED</option>
-                      </select>
-                    </label>
-                    <label class="field">
-                      <span>Category</span>
-                      <select id="prompt-search-category">
-                        <option value="">All</option>
-                        <option value="medical-education">medical-education</option>
-                        <option value="summarization">summarization</option>
-                        <option value="simplification">simplification</option>
-                        <option value="assessment">assessment</option>
-                        <option value="literature-search">literature-search</option>
-                        <option value="study-tools">study-tools</option>
-                        <option value="teaching">teaching</option>
-                      </select>
-                    </label>
-                  </div>
-                </details>
+                <div class="compact-grid">
+                  <label class="field">
+                    <span>Audience hint</span>
+                    <input
+                      id="prompt-suggest-audience"
+                      type="text"
+                      placeholder="Example: medical students, teens, first-year students"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>Mode hint</span>
+                    <select id="prompt-suggest-mode">
+                      <option value="auto">auto</option>
+                      <option value="rag">rag</option>
+                      <option value="summarize">summarize</option>
+                      <option value="simplify">simplify</option>
+                      <option value="quiz">quiz</option>
+                      <option value="pubmed">pubmed</option>
+                      <option value="prompt_enhance">prompt_enhance</option>
+                    </select>
+                  </label>
+                </div>
 
-                <button class="secondary-button" type="submit">Find recipes</button>
+                <button class="primary-button" type="submit">Suggest prompts</button>
               </form>
 
-              <div id="prompt-search-results" class="prompt-results empty-state">
-                Search results will appear here.
+              <div id="prompt-suggest-results" class="prompt-results empty-state">
+                Prompt suggestions will appear here.
               </div>
+
+              <details class="advanced-prompt-filters recipe-browser">
+                <summary>Or browse the recipe library</summary>
+
+                <div class="tag-filter-row">
+                  <button type="button" class="chip-button prompt-filter-button active" data-category="">All</button>
+                  <button type="button" class="chip-button prompt-filter-button" data-category="summarization">Summary</button>
+                  <button type="button" class="chip-button prompt-filter-button" data-category="simplification">Simplify</button>
+                  <button type="button" class="chip-button prompt-filter-button" data-category="assessment">Quiz</button>
+                  <button type="button" class="chip-button prompt-filter-button" data-category="literature-search">PubMed</button>
+                </div>
+
+                <form id="prompt-search-form" class="stack-form compact-search-form">
+                  <label class="field">
+                    <span>Search prompt recipes</span>
+                    <input
+                      id="prompt-search-query"
+                      name="query"
+                      type="text"
+                      placeholder="Try: summary, compare, PubMed, quiz..."
+                    />
+                  </label>
+
+                  <details class="advanced-prompt-filters">
+                    <summary>Advanced filters</summary>
+                    <div class="compact-grid">
+                      <label class="field">
+                        <span>Type</span>
+                        <select id="prompt-search-type">
+                          <option value="">All</option>
+                          <option value="TEXT">TEXT</option>
+                          <option value="STRUCTURED">STRUCTURED</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span>Category</span>
+                        <select id="prompt-search-category">
+                          <option value="">All</option>
+                          <option value="medical-education">medical-education</option>
+                          <option value="summarization">summarization</option>
+                          <option value="simplification">simplification</option>
+                          <option value="assessment">assessment</option>
+                          <option value="literature-search">literature-search</option>
+                          <option value="study-tools">study-tools</option>
+                          <option value="teaching">teaching</option>
+                        </select>
+                      </label>
+                    </div>
+                  </details>
+
+                  <button class="secondary-button" type="submit">Find recipes</button>
+                </form>
+
+                <div id="prompt-search-results" class="prompt-results empty-state">
+                  Search results will appear here.
+                </div>
+              </details>
             </section>
 
             <section class="prompt-block">
               <div class="section-headline">
-                <h3>2. Inspect the selected recipe</h3>
-                <span class="microcopy">Use this as a guide, then load it into the improver if you want to customize it.</span>
+                <h3>2. Inspect a library recipe</h3>
+                <span class="microcopy">This advanced section is optional. Use it when you want to study or reuse a saved recipe.</span>
               </div>
               <div id="prompt-detail" class="prompt-detail empty-state">
                 No recipe selected yet.
@@ -266,7 +311,7 @@
             <section class="prompt-block">
               <div class="section-headline">
                 <h3>3. Refine your own prompt</h3>
-                <span class="microcopy">Paste a rough prompt and MARA will tighten it without changing your meaning.</span>
+                <span class="microcopy">Pick a suggestion or paste your own rough prompt. MARA will make it sharper without changing the task.</span>
               </div>
 
               <div class="quick-queries">

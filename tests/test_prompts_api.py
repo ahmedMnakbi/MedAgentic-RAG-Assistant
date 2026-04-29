@@ -32,9 +32,30 @@ def test_prompt_improve_returns_structured_result(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert "Preserve the user's exact intent." in payload["improved_prompt"]
+    assert "Return:" in payload["improved_prompt"]
+    assert "Use the following request without changing its meaning." not in payload["improved_prompt"]
     assert "medical education and document understanding only" not in payload["improved_prompt"]
     assert len(payload["changes"]) >= 1
+
+
+def test_prompt_suggest_returns_variants(client):
+    response = client.post(
+        "/api/prompts/suggest",
+        json={
+            "task": "how to overcome anxiety",
+            "audience": "teens",
+            "modeHint": "pubmed",
+            "outputType": "text",
+            "outputFormat": "text",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["inferred_category"] == "literature-search"
+    assert len(payload["suggestions"]) == 3
+    assert any("PubMed-ready" in item["prompt"] for item in payload["suggestions"])
+    assert payload["recommended_recipe_id"] == "pubmed-query-builder"
 
 
 def test_prompt_enhance_mode_uses_improvement_response(client):
@@ -71,3 +92,24 @@ def test_prompt_improve_does_not_invent_medical_exclusions(client):
     lowered = payload["improved_prompt"].lower()
     assert "excluding studies on diagnosis" not in lowered
     assert "treatment, dosage, and triage" not in lowered
+
+
+def test_prompt_improve_pubmed_recipe_becomes_actionable(client):
+    response = client.post(
+        "/api/prompts/improve",
+        json={
+            "prompt": (
+                "Transform this idea into a focused PubMed search request.\n"
+                "Research question: ${how to overcome anxiety}\n"
+                "Population/topic: ${teens}\n"
+                "Goal: ${goal:find recent educational literature}"
+            ),
+            "outputType": "text",
+            "outputFormat": "text",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "PubMed-ready search query" in payload["improved_prompt"]
+    assert "Use the following request without changing its meaning." not in payload["improved_prompt"]
