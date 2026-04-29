@@ -16,9 +16,19 @@ class SimplificationService:
         enhanced_prompt: str | None = None,
     ) -> str:
         context = RagService.build_context(retrieved_chunks)
+        return self.simplify_context(question, context, enhanced_prompt=enhanced_prompt)
+
+    def simplify_context(
+        self,
+        question: str,
+        context: str,
+        *,
+        enhanced_prompt: str | None = None,
+        context_label: str = "Retrieved document context",
+    ) -> str:
         user_prompt = (
             f"User request:\n{question}\n\n"
-            f"Retrieved document context:\n{context}\n\n"
+            f"{context_label}:\n{context}\n\n"
             f"Enhanced execution prompt (preserve intent):\n{enhanced_prompt or 'Not provided.'}"
         )
         return self.groq_client.generate_text("simplify.txt", user_prompt)

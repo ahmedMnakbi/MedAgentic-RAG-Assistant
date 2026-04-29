@@ -1,5 +1,6 @@
 const state = {
   documents: [],
+  latestPubmedPayload: null,
   selectedPromptId: null,
   promptResults: [],
 };
@@ -97,12 +98,8 @@ async function loadDocuments() {
   renderDocuments();
 }
 
-function renderResult(payload) {
-  const shell = document.getElementById("result-shell");
-  const warnings = (payload.warnings || [])
-    .map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`)
-    .join("");
-  const sources = (payload.sources || [])
+function renderDocumentSources(sources) {
+  return (sources || [])
     .map(
       (source) => `
         <article class="source-card">
@@ -117,7 +114,29 @@ function renderResult(payload) {
       `,
     )
     .join("");
-  const quizItems = (payload.quiz_items || [])
+}
+
+function renderSelectedPubmedSources(sources) {
+  return (sources || [])
+    .map(
+      (source) => `
+        <article class="source-card">
+          <strong>${escapeHtml(source.title)}</strong>
+          <div class="meta-line">
+            <span>${escapeHtml(source.source_type)}</span>
+            ${source.pmid ? `<span>PMID ${escapeHtml(source.pmid)}</span>` : ""}
+            ${source.pmcid ? `<span>${escapeHtml(source.pmcid)}</span>` : ""}
+          </div>
+          <p>${escapeHtml(source.excerpt)}</p>
+          <a class="ghost-link" href="${escapeHtml(source.source_url)}" target="_blank" rel="noreferrer">Open source</a>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderQuizItems(items) {
+  return (items || [])
     .map(
       (item) => `
         <article class="quiz-card">
@@ -127,36 +146,162 @@ function renderResult(payload) {
           </ul>
           <p><strong>Correct:</strong> ${escapeHtml(item.correct_answer)}</p>
           <p>${escapeHtml(item.explanation)}</p>
-          <p class="microcopy">Source pages: ${(item.source_pages || []).join(", ")}</p>
+          ${
+            (item.source_pages || []).length
+              ? `<p class="microcopy">Source pages: ${(item.source_pages || []).join(", ")}</p>`
+              : ""
+          }
+          ${
+            (item.source_titles || []).length
+              ? `<p class="microcopy">Source titles: ${(item.source_titles || []).map(escapeHtml).join("; ")}</p>`
+              : ""
+          }
         </article>
       `,
     )
     .join("");
-  const pubmedResults = (payload.pubmed_results || [])
+}
+
+function renderPubmedResults(results) {
+  return (results || [])
     .map(
       (item) => `
         <article class="pubmed-card">
-          <strong>${escapeHtml(item.title)}</strong>
-          <p class="microcopy">${escapeHtml(item.journal)} &middot; ${escapeHtml(item.publication_date)}</p>
-          <p>${escapeHtml((item.authors || []).join(", "))}</p>
-          <a class="ghost-link" href="${escapeHtml(item.pubmed_url)}" target="_blank" rel="noreferrer">
-            View PMID ${escapeHtml(item.pmid)}
-          </a>
+          <label class="pubmed-select-card">
+            <input type="checkbox" name="selected_pubmed_pmids" value="${escapeHtml(item.pmid)}" />
+            <span>
+              <strong>${escapeHtml(item.title)}</strong>
+              <div class="meta-line">
+                <span>${escapeHtml(item.journal)} &middot; ${escapeHtml(item.publication_date)}</span>
+              </div>
+              <p>${escapeHtml((item.authors || []).join(", "))}</p>
+              <div class="result-topline">
+                <span class="mode-badge">${escapeHtml(item.content_availability || "metadata_only")}</span>
+                ${item.pmcid ? `<span class="mode-badge">${escapeHtml(item.pmcid)}</span>` : ""}
+              </div>
+              <div class="inline-actions">
+                <a class="ghost-link" href="${escapeHtml(item.pubmed_url)}" target="_blank" rel="noreferrer">
+                  View PMID ${escapeHtml(item.pmid)}
+                </a>
+                ${
+                  item.full_text_url
+                    ? `<a class="ghost-link" href="${escapeHtml(item.full_text_url)}" target="_blank" rel="noreferrer">Open PMC full text</a>`
+                    : ""
+                }
+              </div>
+            </span>
+          </label>
         </article>
       `,
     )
     .join("");
+}
+
+function renderPubmedActionPanel() {
+  if (!state.latestPubmedPayload?.pubmed_results?.length) {
+    return "";
+  }
+  return `
+    <article class="result-card">
+      <h3>Use selected PubMed results</h3>
+      <p class="microcopy">
+        Choose one or more results below. The app will try PMC full text first when available, then
+        fall back to the PubMed abstract.
+      </p>
+      <label class="field">
+        <span>Optional follow-up instruction</span>
+        <textarea
+          id="pubmed-followup-question"
+          rows="3"
+          placeholder="Optional: focus the summary, simplification, or quiz on a specific angle."
+        ></textarea>
+      </label>
+      <div class="toggle-row">
+        <label class="switch">
+          <input id="pubmed-prefer-fulltext-toggle" type="checkbox" checked />
+          <span>Prefer PMC full text when available</span>
+        </label>
+        <label class="switch">
+          <input id="pubmed-enhance-toggle" type="checkbox" />
+          <span>Enhance follow-up prompt</span>
+        </label>
+      </div>
+      <div class="inline-actions">
+        <button class="secondary-button" type="button" data-pubmed-action="summarize">Summarize selected</button>
+        <button class="secondary-button" type="button" data-pubmed-action="simplify">Simplify selected</button>
+        <button class="secondary-button" type="button" data-pubmed-action="quiz">Quiz selected</button>
+      </div>
+      <p class="microcopy" id="pubmed-action-status">Selections stay local to this page until you run an action.</p>
+    </article>
+
+    <article class="result-card">
+      <h3>Experimental open-access URL import</h3>
+      <p class="microcopy">
+        Paste a public article URL to try summarization, simplification, or quiz generation from
+        the visible article text. This is experimental and may fail on some sites.
+      </p>
+      <label class="field">
+        <span>Open-access article URL</span>
+        <input
+          id="open-access-url"
+          type="url"
+          placeholder="https://..."
+        />
+      </label>
+      <label class="field">
+        <span>Optional instruction for imported article</span>
+        <textarea
+          id="open-access-question"
+          rows="3"
+          placeholder="Optional: e.g. Summarize this article for first-year medical students."
+        ></textarea>
+      </label>
+      <div class="toggle-row">
+        <label class="switch">
+          <input id="open-access-enhance-toggle" type="checkbox" />
+          <span>Enhance imported-article prompt</span>
+        </label>
+      </div>
+      <div class="inline-actions">
+        <button class="secondary-button" type="button" data-open-access-action="summarize">Summarize URL</button>
+        <button class="secondary-button" type="button" data-open-access-action="simplify">Simplify URL</button>
+        <button class="secondary-button" type="button" data-open-access-action="quiz">Quiz URL</button>
+      </div>
+      <p class="microcopy" id="open-access-status">Only public open-access article pages are allowed.</p>
+    </article>
+  `;
+}
+
+function renderResult(payload) {
+  const shell = document.getElementById("result-shell");
+  const statusLabel = payload.mode_used || payload.action || "result";
+  const warnings = (payload.warnings || [])
+    .map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`)
+    .join("");
+  const sources = renderDocumentSources(payload.sources || []);
+  const selectedSources = renderSelectedPubmedSources(payload.selected_sources || []);
+  const quizItems = renderQuizItems(payload.quiz_items || []);
+  const pubmedResults = renderPubmedResults(payload.pubmed_results || []);
+
+  if (payload.pubmed_results?.length) {
+    state.latestPubmedPayload = payload;
+  }
 
   shell.className = "result-shell";
   shell.innerHTML = `
     <article class="result-card">
       <div class="result-topline">
         <span class="status-badge ${escapeHtml(payload.status)}">${escapeHtml(payload.status)}</span>
-        <span class="mode-badge">${escapeHtml(payload.mode_used)}</span>
+        <span class="mode-badge">${escapeHtml(statusLabel)}</span>
         <span class="mode-badge">Safety: ${escapeHtml(payload.safety.category)}</span>
       </div>
       <div class="answer-body">${escapeHtml(payload.answer || "")}</div>
       ${warnings ? `<div class="result-topline">${warnings}</div>` : ""}
+      ${
+        payload.action && state.latestPubmedPayload?.pubmed_results?.length
+          ? `<div class="inline-actions"><button class="secondary-button" type="button" data-restore-pubmed="true">Back to latest PubMed search</button></div>`
+          : ""
+      }
     </article>
 
     ${
@@ -178,6 +323,15 @@ function renderResult(payload) {
     }
 
     ${
+      selectedSources
+        ? `<article class="result-card">
+            <h3>Selected PubMed sources</h3>
+            <div class="document-list">${selectedSources}</div>
+          </article>`
+        : ""
+    }
+
+    ${
       quizItems
         ? `<article class="result-card">
             <h3>Quiz items</h3>
@@ -191,7 +345,8 @@ function renderResult(payload) {
         ? `<article class="result-card">
             <h3>PubMed results</h3>
             <div class="document-list">${pubmedResults}</div>
-          </article>`
+          </article>
+          ${renderPubmedActionPanel()}`
         : ""
     }
   `;
@@ -286,12 +441,10 @@ function renderPromptDetail(prompt) {
     </article>
   `;
 
-  document
-    .getElementById("load-prompt-into-improver")
-    .addEventListener("click", () => {
-      document.getElementById("prompt-improve-input").value = prompt.template;
-      document.getElementById("prompt-improve-input").focus();
-    });
+  document.getElementById("load-prompt-into-improver").addEventListener("click", () => {
+    document.getElementById("prompt-improve-input").value = prompt.template;
+    document.getElementById("prompt-improve-input").focus();
+  });
 }
 
 function renderPromptImprovement(payload) {
@@ -336,6 +489,74 @@ async function searchPrompts(event) {
     await loadPromptDetail(payload[0].id);
   } else {
     renderPromptDetail(null);
+  }
+}
+
+function getSelectedPubmedPmids() {
+  return Array.from(document.querySelectorAll('input[name="selected_pubmed_pmids"]:checked')).map(
+    (input) => input.value,
+  );
+}
+
+async function runSelectedPubmedAction(action) {
+  const shell = document.getElementById("result-shell");
+  const status = document.getElementById("pubmed-action-status");
+  const pmids = getSelectedPubmedPmids();
+  if (!pmids.length) {
+    if (status) status.textContent = "Select at least one PubMed result first.";
+    return;
+  }
+
+  const payload = {
+    pmids,
+    action,
+    question: document.getElementById("pubmed-followup-question")?.value.trim() || null,
+    enhance_prompt: document.getElementById("pubmed-enhance-toggle")?.checked || false,
+    prefer_full_text: document.getElementById("pubmed-prefer-fulltext-toggle")?.checked ?? true,
+  };
+
+  shell.className = "result-shell empty-state";
+  shell.textContent = "Building PubMed article context...";
+  try {
+    const result = await api("/api/pubmed/transform", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderResult(result);
+  } catch (error) {
+    shell.className = "result-shell empty-state";
+    shell.textContent = error.message;
+  }
+}
+
+async function runOpenAccessAction(action) {
+  const shell = document.getElementById("result-shell");
+  const status = document.getElementById("open-access-status");
+  const url = document.getElementById("open-access-url")?.value.trim() || "";
+  if (!url) {
+    if (status) status.textContent = "Paste an open-access article URL first.";
+    return;
+  }
+  const payload = {
+    url,
+    action,
+    question: document.getElementById("open-access-question")?.value.trim() || null,
+    enhance_prompt: document.getElementById("open-access-enhance-toggle")?.checked || false,
+  };
+
+  shell.className = "result-shell empty-state";
+  shell.textContent = "Importing open-access article...";
+  try {
+    const result = await api("/api/pubmed/import-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderResult(result);
+  } catch (error) {
+    shell.className = "result-shell empty-state";
+    shell.textContent = error.message;
   }
 }
 
@@ -393,6 +614,25 @@ function bindStaticInteractions() {
     } catch (error) {
       shell.className = "result-shell empty-state";
       shell.textContent = error.message;
+    }
+  });
+
+  document.getElementById("result-shell").addEventListener("click", async (event) => {
+    const pubmedActionButton = event.target.closest("[data-pubmed-action]");
+    if (pubmedActionButton) {
+      await runSelectedPubmedAction(pubmedActionButton.dataset.pubmedAction);
+      return;
+    }
+
+    const openAccessButton = event.target.closest("[data-open-access-action]");
+    if (openAccessButton) {
+      await runOpenAccessAction(openAccessButton.dataset.openAccessAction);
+      return;
+    }
+
+    const restoreButton = event.target.closest("[data-restore-pubmed]");
+    if (restoreButton && state.latestPubmedPayload) {
+      renderResult(state.latestPubmedPayload);
     }
   });
 

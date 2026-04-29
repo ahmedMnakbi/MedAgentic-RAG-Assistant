@@ -360,6 +360,19 @@ body::before {
   cursor: pointer;
 }
 
+.pubmed-select-card {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 12px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.pubmed-select-card input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+
 .document-card strong,
 .prompt-card strong,
 .source-card strong,

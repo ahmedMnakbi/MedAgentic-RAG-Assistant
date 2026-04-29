@@ -16,9 +16,19 @@ class AnswerService:
         enhanced_prompt: str | None = None,
     ) -> str:
         context = RagService.build_context(retrieved_chunks)
+        return self.answer_context(question, context, enhanced_prompt=enhanced_prompt)
+
+    def answer_context(
+        self,
+        question: str,
+        context: str,
+        *,
+        enhanced_prompt: str | None = None,
+        context_label: str = "Retrieved document context",
+    ) -> str:
         user_prompt = (
             f"User question:\n{question}\n\n"
-            f"Retrieved document context:\n{context}\n\n"
+            f"{context_label}:\n{context}\n\n"
             f"Enhanced execution prompt (preserve intent):\n{enhanced_prompt or 'Not provided.'}\n\n"
             "Answer only from the retrieved document context. If the context is incomplete, say so clearly."
         )

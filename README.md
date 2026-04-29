@@ -2,7 +2,7 @@
 
 MedAgentic RAG Assistant is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, explore PubMed metadata, and improve prompts through an internal prompt lab.
 
-`v1.1` adds a modern class-demo web interface at `/` while keeping Swagger at `/docs` for developer testing.
+`v1.2` adds selected PubMed article actions, PMC full-text fallback, and an experimental open-access URL import flow while keeping Swagger at `/docs` for developer testing.
 
 ## Safety Boundary
 
@@ -14,7 +14,7 @@ MedAgentic RAG Assistant is a FastAPI project for **medical education and docume
   - personalized treatment recommendations
 - It is built for learning, demonstrations, and portfolio use.
 
-## What v1.1 Includes
+## What v1.2 Includes
 
 - FastAPI backend with Swagger docs
 - interactive web UI at `/`
@@ -25,13 +25,18 @@ MedAgentic RAG Assistant is a FastAPI project for **medical education and docume
 - `GET /api/prompts/search`
 - `GET /api/prompts/{prompt_id}`
 - `POST /api/prompts/improve`
+- `POST /api/pubmed/transform`
+- `POST /api/pubmed/import-url`
 - PDF validation, parsing, chunking, embeddings, and Chroma persistence
 - rule-based routing for `rag`, `summarize`, `simplify`, `quiz`, `pubmed`, and `prompt_enhance`
 - safety-first refusal logic
 - PubMed metadata search through NCBI E-utilities
+- selected PubMed article summarize / simplify / quiz workflows
+- PMC full-text fallback when a selected PubMed result has a PMCID
+- experimental import of readable open-access article URLs
 - internal prompt library and prompt improver inspired by Prompt Finder & Enhancer / prompts.chat
 
-## What v1.1 Still Does Not Include
+## What v1.2 Still Does Not Include
 
 - authentication
 - deployment
@@ -39,7 +44,8 @@ MedAgentic RAG Assistant is a FastAPI project for **medical education and docume
 - LangGraph orchestration
 - multi-user accounts
 - live prompts.chat or MCP dependency
-- PubMed abstract snippets or synthesis
+- guaranteed full text for every PubMed article
+- publisher-site scraping as a primary workflow
 
 ## Interface Map
 
@@ -55,14 +61,14 @@ flowchart TD
     B --> C["Safety Guardrail"]
     C --> D["Rule-Based Router"]
     D --> E["Document RAG Path"]
-    D --> F["PubMed Metadata Path"]
+    D --> F["PubMed Search + Article Actions"]
     D --> G["Prompt Lab Path"]
     E --> H["PDF Parsing + Chunking"]
     H --> I["Embeddings"]
     I --> J["ChromaDB"]
     J --> K["Retrieved Chunks"]
     K --> L["Groq LLM Response"]
-    F --> M["NCBI E-utilities"]
+    F --> M["NCBI E-utilities + PMC Full Text"]
     G --> N["Prompt Library + Prompt Improver"]
 ```
 
@@ -213,6 +219,35 @@ Example:
 }
 ```
 
+### `POST /api/pubmed/transform`
+
+- takes one or more selected PubMed PMIDs
+- tries PMC full text first when available
+- falls back to PubMed abstract text
+- supports:
+  - `summarize`
+  - `simplify`
+  - `quiz`
+
+Example:
+
+```json
+{
+  "pmids": ["39738916"],
+  "action": "summarize",
+  "question": "Summarize the selected article for medical students.",
+  "enhance_prompt": false,
+  "prefer_full_text": true
+}
+```
+
+### `POST /api/pubmed/import-url`
+
+- experimental workflow for importing readable text from a public open-access article URL
+- supports the same actions as selected PubMed articles
+- blocks localhost/private-network URLs
+- may fail on sites that require login, heavy JavaScript, or anti-bot protection
+
 ## Web UI Overview
 
 The class-demo interface at `/` has three areas:
@@ -225,6 +260,8 @@ The class-demo interface at `/` has three areas:
   - switch between modes
   - compare `top_k`
   - toggle prompt enhancement
+  - select PubMed results for summary, simplification, or quizzes
+  - try experimental open-access URL import
 - `Prompt Lab`
   - search built-in prompt templates
   - inspect prompt variables
@@ -256,7 +293,9 @@ Current limitation:
 5. Ask a grounded study question and show sources.
 6. Switch to `summarize`, `simplify`, and `quiz`.
 7. Use a PubMed question to show literature metadata.
-8. Open `Prompt Lab` and improve a rough prompt live.
+8. Select a PubMed result and run `summarize`, `simplify`, or `quiz`.
+9. Optionally demonstrate the open-access article URL import.
+10. Open `Prompt Lab` and improve a rough prompt live.
 
 ## Project Structure
 
@@ -282,22 +321,23 @@ Run the automated suite:
 pytest
 ```
 
-Current local baseline for `v1.1`:
+Current local baseline for `v1.2`:
 
-- `32` tests passing
+- `47` tests passing
 
 ## Current Limitations
 
 - educational use only
 - no diagnosis or treatment
 - no OCR for scanned PDFs
-- PubMed is metadata-only
+- PubMed article actions are still limited by abstract availability or PMC full text
+- open-access URL import is experimental and site-dependent
 - no authentication or multi-user support
 - no deployment pipeline yet
 
-## Good Next Steps After v1.1
+## Good Next Steps After v1.2
 
-- add PubMed abstract snippets and optional synthesis
+- add multi-article PubMed synthesis across selected studies
 - add post-generation safety checking
 - add richer source citation formatting in the UI
 - add Docker for easier classroom demos

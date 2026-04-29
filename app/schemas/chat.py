@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import QuizItem
 from app.schemas.pubmed import PubMedArticle
 from app.schemas.safety import SafetyAssessment
 
@@ -27,15 +28,6 @@ class SourceRef(BaseModel):
     chunk_id: str
     excerpt: str
     score: float
-
-
-class QuizItem(BaseModel):
-    question: str
-    options: list[str] = Field(default_factory=list)
-    correct_answer: str
-    explanation: str
-    source_pages: list[int] = Field(default_factory=list)
-
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=4000)

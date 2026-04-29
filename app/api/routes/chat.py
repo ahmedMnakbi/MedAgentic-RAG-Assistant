@@ -79,7 +79,9 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         )
         warnings = []
         if pubmed_results:
-            warnings.append("PubMed results are metadata-only in v1.")
+            warnings.append(
+                "PubMed search returns metadata cards here. In v1.2, you can now select results and run summarize, simplify, or quiz actions on abstracts or PMC full text."
+            )
         return AskResponse(
             status="ok",
             mode_used="pubmed",

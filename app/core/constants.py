@@ -3,8 +3,8 @@ from __future__ import annotations
 APP_DESCRIPTION = (
     "MedAgentic RAG Assistant is an educational medical document assistant. "
     "It helps with document understanding, retrieval, summarization, simplification, "
-    "study quizzes, and PubMed metadata search. It does not provide diagnosis, "
-    "dosage advice, emergency triage, or personalized treatment."
+    "study quizzes, PubMed search, selected PubMed article workflows, and prompt tools. "
+    "It does not provide diagnosis, dosage advice, emergency triage, or personalized treatment."
 )
 
 DEFAULT_ROUTER_MODE = "rag"
@@ -18,6 +18,8 @@ ALLOWED_PDF_CONTENT_TYPES = {
 }
 
 PUBMED_URL_TEMPLATE = "https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+PMC_URL_TEMPLATE = "https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/"
+PMC_IDCONVERTER_URL = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
 
 ROUTER_KEYWORDS = {
     "pubmed": (

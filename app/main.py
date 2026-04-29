@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import chat, documents, health, prompts, web
+from app.api.routes import chat, documents, health, prompts, pubmed, web
 from app.clients.embeddings_client import EmbeddingsClient
 from app.clients.groq_client import GroqClient
 from app.clients.ncbi_client import NCBIClient
@@ -68,7 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=resolved_settings.app_name,
         description=APP_DESCRIPTION,
         debug=resolved_settings.app_debug,
-        version="1.1.0",
+        version="1.2.0",
     )
     app.state.settings = resolved_settings
     app.state.services = build_services(resolved_settings)
@@ -78,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(documents.router, prefix=resolved_settings.api_prefix)
     app.include_router(chat.router, prefix=resolved_settings.api_prefix)
+    app.include_router(pubmed.router, prefix=resolved_settings.api_prefix)
     app.include_router(prompts.router, prefix=resolved_settings.api_prefix)
 
     @app.exception_handler(AppError)
