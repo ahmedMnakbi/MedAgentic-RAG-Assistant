@@ -194,9 +194,10 @@ class PromptLibraryService:
             f"Requested output type: {output_type}\n"
             f"Requested output format: {output_format}\n\n"
             "Improve this prompt for clarity, structure, and robustness while preserving the user's exact intent. "
-            "Do not add domain facts or change the request. "
-            "Because this prompt will be used inside an educational medical application, the improved prompt should "
-            "keep the task educational, avoid diagnosis/dosage/triage/treatment guidance, and make source boundaries explicit."
+            "Do not add domain facts, exclusion criteria, safety topics, or new sub-goals that the user did not ask for. "
+            "Do not narrow or broaden the topic. "
+            "Do not turn the prompt into a different task. "
+            "Your job is prompt engineering only: improve structure, clarity, constraints, and output instructions."
         )
         try:
             payload = self.groq_client.generate_json("prompt_improve.txt", request_prompt, temperature=0.1)
@@ -205,14 +206,10 @@ class PromptLibraryService:
                 return self._fallback_improvement(prompt, output_type=output_type, output_format=output_format)
 
             normalized_changes = [str(item).strip() for item in payload.get("changes", []) if str(item).strip()]
-            wrapped_prompt = self._wrap_improved_prompt(
-                raw_improved_prompt,
-                output_type=output_type,
-                output_format=output_format,
+            return PromptImproveResponse(
+                improved_prompt=raw_improved_prompt,
+                changes=normalized_changes or self._default_changes(output_type=output_type, output_format=output_format),
             )
-            if not any("educational" in item.lower() or "safety" in item.lower() for item in normalized_changes):
-                normalized_changes.append("Added educational safety and source-boundary constraints.")
-            return PromptImproveResponse(improved_prompt=wrapped_prompt, changes=normalized_changes)
         except Exception:
             return self._fallback_improvement(prompt, output_type=output_type, output_format=output_format)
 
@@ -274,36 +271,28 @@ class PromptLibraryService:
         output_type: PromptOutputType,
         output_format: PromptOutputFormat,
     ) -> PromptImproveResponse:
-        improved_prompt = PromptLibraryService._wrap_improved_prompt(
-            prompt.strip(),
-            output_type=output_type,
-            output_format=output_format,
+        cleaned_prompt = prompt.strip()
+        improved_prompt = (
+            "Use the following request without changing its meaning.\n"
+            f"Task:\n{cleaned_prompt}\n\n"
+            "Prompt engineering instructions:\n"
+            "- Preserve the user's exact intent.\n"
+            "- Do not add new facts, exclusions, or sub-goals.\n"
+            "- Make the response structure explicit and easy to follow.\n"
+            "- If the available information is insufficient, state that clearly.\n"
+            f"- Target output type: {output_type}.\n"
+            f"- Target output format: {output_format}."
         )
         return PromptImproveResponse(
             improved_prompt=improved_prompt,
-            changes=[
-                "Added an explicit intent-preservation instruction.",
-                "Added target output type and format guidance.",
-                "Added structure and source-boundary reminders to reduce ambiguity.",
-                "Added the educational safety boundary for this application.",
-            ],
+            changes=PromptLibraryService._default_changes(output_type=output_type, output_format=output_format),
         )
 
     @staticmethod
-    def _wrap_improved_prompt(
-        prompt: str,
-        *,
-        output_type: PromptOutputType,
-        output_format: PromptOutputFormat,
-    ) -> str:
-        return (
-            "Preserve the user's exact intent.\n"
-            "This assistant is for medical education and document understanding only.\n"
-            "- Do not provide diagnosis, medication dosage advice, emergency triage, or personalized treatment.\n"
-            "- Do not add new medical facts that were not requested.\n"
-            "- Use explicit source boundaries and say when the source material is insufficient.\n"
-            f"Target output type: {output_type}\n"
-            f"Target output format: {output_format}\n\n"
-            "Improved prompt:\n"
-            f"{prompt.strip()}"
-        )
+    def _default_changes(*, output_type: PromptOutputType, output_format: PromptOutputFormat) -> list[str]:
+        return [
+            "Added an explicit intent-preservation instruction.",
+            "Added clearer response-structure guidance.",
+            f"Added target output type guidance ({output_type}).",
+            f"Added target output format guidance ({output_format}).",
+        ]

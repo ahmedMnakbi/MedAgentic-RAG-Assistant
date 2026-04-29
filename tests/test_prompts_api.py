@@ -33,7 +33,7 @@ def test_prompt_improve_returns_structured_result(client):
     assert response.status_code == 200
     payload = response.json()
     assert "Preserve the user's exact intent." in payload["improved_prompt"]
-    assert "medical education and document understanding only" in payload["improved_prompt"]
+    assert "medical education and document understanding only" not in payload["improved_prompt"]
     assert len(payload["changes"]) >= 1
 
 
@@ -53,4 +53,21 @@ def test_prompt_enhance_mode_uses_improvement_response(client):
     assert payload["status"] == "ok"
     assert payload["mode_used"] == "prompt_enhance"
     assert payload["enhanced_prompt"]
-    assert "medical education and document understanding only" in payload["enhanced_prompt"]
+    assert "medical education and document understanding only" not in payload["enhanced_prompt"]
+
+
+def test_prompt_improve_does_not_invent_medical_exclusions(client):
+    response = client.post(
+        "/api/prompts/improve",
+        json={
+            "prompt": "Provide a list of relevant PubMed studies on Addison's disease.",
+            "outputType": "text",
+            "outputFormat": "text",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    lowered = payload["improved_prompt"].lower()
+    assert "excluding studies on diagnosis" not in lowered
+    assert "treatment, dosage, and triage" not in lowered

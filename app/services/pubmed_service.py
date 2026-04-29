@@ -18,6 +18,34 @@ class PubMedService:
 
     @staticmethod
     def _normalize_query(question: str) -> str:
-        cleaned = re.sub(r"\b(pubmed|ncbi|papers|paper|studies|study|articles|article)\b", " ", question, flags=re.IGNORECASE)
+        cleaned = question.strip()
+        cleaned = re.sub(
+            r",?\s*(excluding|without)\s+.+?(?=,\s*(and\s+)?focusing\b|[.?!;]|$)",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r",?\s*(and\s+)?focusing\s+on\s+.+?(?=[.?!;]|$)",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        topic_match = re.search(r"\b(?:on|about|regarding)\s+(.+)$", cleaned, flags=re.IGNORECASE)
+        if topic_match:
+            cleaned = topic_match.group(1)
+
+        cleaned = re.sub(
+            r"\b("
+            r"pubmed|ncbi|papers|paper|studies|study|articles|article|"
+            r"provide|list|relevant|find|show|give|return|search|results?|"
+            r"please|me|metadata|educational|content"
+            r")\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"^[^a-zA-Z0-9]+|[^a-zA-Z0-9)']+$", "", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = re.sub(r"\s+,", ",", cleaned).strip(" ,")
         return cleaned

@@ -48,21 +48,27 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
     mode = services.router_service.resolve_mode(payload.mode, payload.question)
     enhanced_prompt = None
 
-    if payload.enhance_prompt or mode == "prompt_enhance":
+    if mode == "prompt_enhance":
+        enhanced_prompt = services.prompt_library_service.improve_prompt(
+            prompt=payload.question,
+            output_type="text",
+            output_format="text",
+        ).improved_prompt
+        return AskResponse(
+            status="ok",
+            mode_used="prompt_enhance",
+            answer="Prompt improved for clearer structure and execution without changing the original intent.",
+            safety=safety,
+            enhanced_prompt=enhanced_prompt,
+        )
+
+    if payload.enhance_prompt:
         base_enhanced_prompt = services.prompt_enhancer_service.enhance(payload.question, mode)
         enhanced_prompt = services.prompt_library_service.improve_prompt(
             prompt=base_enhanced_prompt,
             output_type="text",
             output_format="text",
         ).improved_prompt
-        if mode == "prompt_enhance":
-            return AskResponse(
-                status="ok",
-                mode_used="prompt_enhance",
-                answer="Prompt improved for structured educational use without changing the original intent.",
-                safety=safety,
-                enhanced_prompt=enhanced_prompt,
-            )
 
     if mode == "pubmed":
         pubmed_results = services.pubmed_service.search(payload.question)
