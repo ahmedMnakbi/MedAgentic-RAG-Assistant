@@ -21,6 +21,10 @@ def test_validate_content_type_rejects_non_pdf():
         validate_content_type("text/plain")
 
 
+def test_validate_content_type_allows_generic_octet_stream():
+    validate_content_type("application/octet-stream")
+
+
 def test_validate_file_size_rejects_empty():
     with pytest.raises(FileValidationError):
         validate_file_size(b"", max_bytes=10)

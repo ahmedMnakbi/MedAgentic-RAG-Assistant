@@ -10,13 +10,16 @@ class SafetyService:
         self.diagnosis_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
-                r"\bdiagnos(e|is|ing)\b",
                 r"\bdo i have\b",
                 r"\bwhat disease do i have\b",
                 r"\bwhat condition do i have\b",
                 r"\bwhat illness do i have\b",
                 r"\bwhat is wrong with me\b",
                 r"\bcan you tell me what i have\b",
+                r"\bcan you diagnose\b",
+                r"\bdiagnose my\b",
+                r"\bdiagnosis for my\b",
+                r"\bdo these symptoms mean\b",
             )
         ]
         self.dosage_patterns = [

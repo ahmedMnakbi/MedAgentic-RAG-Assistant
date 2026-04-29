@@ -21,3 +21,18 @@ def test_unsafe_chat_requests_are_refused(client, question, category):
     assert payload["mode_used"] == "refuse"
     assert payload["safety"]["allowed"] is False
     assert payload["safety"]["category"] == category
+
+
+def test_educational_diagnostic_criteria_question_is_not_refused(client, app, monkeypatch):
+    monkeypatch.setattr(app.state.services.rag_service, "retrieve", lambda *args, **kwargs: [])
+
+    response = client.post(
+        "/api/chat/ask",
+        json={"question": "What are the diagnostic criteria for diabetes in the uploaded notes?"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "no_source"
+    assert payload["safety"]["allowed"] is True
+    assert payload["safety"]["category"] == "safe_educational"

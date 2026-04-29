@@ -14,6 +14,7 @@ DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 ALLOWED_PDF_CONTENT_TYPES = {
     "application/pdf",
     "application/x-pdf",
+    "application/octet-stream",
 }
 
 PUBMED_URL_TEMPLATE = "https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
@@ -39,6 +40,8 @@ ROUTER_KEYWORDS = {
         "flashcard",
         "flashcards",
         "test me",
+        "study questions",
+        "generate questions",
         "practice question",
         "practice questions",
     ),

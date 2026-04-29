@@ -23,7 +23,7 @@ def validate_pdf_extension(filename: str) -> None:
 
 
 def validate_content_type(content_type: str | None) -> None:
-    if content_type and content_type not in ALLOWED_PDF_CONTENT_TYPES:
+    if content_type and content_type.lower() not in ALLOWED_PDF_CONTENT_TYPES:
         raise UnsupportedMediaTypeError("The uploaded file must use a PDF content type.")
 
 
