@@ -1,6 +1,7 @@
 const state = {
   documents: [],
   latestPubmedPayload: null,
+  promptCategory: "",
   selectedPromptId: null,
   promptResults: [],
 };
@@ -203,17 +204,20 @@ function renderPubmedActionPanel() {
   }
   return `
     <article class="result-card">
-      <h3>Use selected PubMed results</h3>
+      <div class="section-headline">
+        <h3>Turn selected studies into study material</h3>
+        <span class="microcopy" id="pubmed-selection-count">0 selected</span>
+      </div>
       <p class="microcopy">
-        Choose one or more results below. The app will try PMC full text first when available, then
-        fall back to the PubMed abstract.
+        Choose 3 to 5 results for merged synthesis. MARA will try PMC full text first when available, then fall back to
+        PubMed abstracts.
       </p>
       <label class="field">
         <span>Optional follow-up instruction</span>
         <textarea
           id="pubmed-followup-question"
           rows="3"
-          placeholder="Optional: focus the summary, simplification, or quiz on a specific angle."
+          placeholder="Optional: focus the synthesis, comparison, simplification, or quiz on a specific angle."
         ></textarea>
       </label>
       <div class="toggle-row">
@@ -228,6 +232,7 @@ function renderPubmedActionPanel() {
       </div>
       <div class="inline-actions">
         <button class="secondary-button" type="button" data-pubmed-action="summarize">Summarize selected</button>
+        <button class="secondary-button" type="button" data-pubmed-action="compare">Compare 3-5 studies</button>
         <button class="secondary-button" type="button" data-pubmed-action="simplify">Simplify selected</button>
         <button class="secondary-button" type="button" data-pubmed-action="quiz">Quiz selected</button>
       </div>
@@ -350,6 +355,10 @@ function renderResult(payload) {
         : ""
     }
   `;
+
+  if (payload.pubmed_results?.length) {
+    updatePubmedSelectionStatus();
+  }
 }
 
 function serializeChatPayload() {
@@ -382,11 +391,15 @@ function renderPromptResults(results) {
     .map(
       (item) => `
         <article class="prompt-card ${state.selectedPromptId === item.id ? "active" : ""}" data-prompt-id="${escapeHtml(item.id)}">
+          <div class="result-topline">
+            <span class="mode-badge">${escapeHtml(item.category)}</span>
+            <span class="mode-badge">${escapeHtml(item.prompt_type)}</span>
+            ${item.has_variables ? `<span class="mode-badge">fill-in ready</span>` : ""}
+          </div>
           <strong>${escapeHtml(item.title)}</strong>
           <p>${escapeHtml(item.description)}</p>
           <div class="meta-line">
-            <span>${escapeHtml(item.category)}</span>
-            <span>${escapeHtml(item.prompt_type)}</span>
+            <span>${escapeHtml(item.author_name)}</span>
           </div>
           <div class="tag-row">
             ${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
@@ -421,29 +434,40 @@ function renderPromptDetail(prompt) {
           .join("")}
       </div>
     `
-    : `<p class="microcopy">This prompt has no variables.</p>`;
+    : `<p class="microcopy">This recipe has no fill-in variables.</p>`;
+
+  const starter = buildPromptStarter(prompt);
 
   shell.className = "prompt-detail";
   shell.innerHTML = `
-    <article class="result-card">
+    <article class="result-card prompt-recipe-card">
       <div class="result-topline">
         <span class="mode-badge">${escapeHtml(prompt.category)}</span>
         <span class="mode-badge">${escapeHtml(prompt.prompt_type)}</span>
-        <span class="mode-badge">Author: ${escapeHtml(prompt.author_name)}</span>
+        <span class="mode-badge">Recipe by ${escapeHtml(prompt.author_name)}</span>
       </div>
       <h3>${escapeHtml(prompt.title)}</h3>
       <p>${escapeHtml(prompt.description)}</p>
+      <p class="microcopy">Best for: ${(prompt.tags || []).map(escapeHtml).join(" | ")}</p>
       ${variables}
       <div class="inline-actions">
-        <button class="secondary-button" type="button" id="load-prompt-into-improver">Load into improver</button>
+        <button class="secondary-button" type="button" id="load-prompt-into-improver">Load recipe into improver</button>
+        <button class="secondary-button" type="button" id="load-prompt-into-chat">Use recipe hint in Assistant Lab</button>
       </div>
-      <div class="prompt-template mono">${escapeHtml(prompt.template)}</div>
+      <details class="template-disclosure">
+        <summary>View full recipe template</summary>
+        <div class="prompt-template mono">${escapeHtml(prompt.template)}</div>
+      </details>
     </article>
   `;
 
   document.getElementById("load-prompt-into-improver").addEventListener("click", () => {
     document.getElementById("prompt-improve-input").value = prompt.template;
     document.getElementById("prompt-improve-input").focus();
+  });
+  document.getElementById("load-prompt-into-chat").addEventListener("click", () => {
+    document.getElementById("chat-question").value = starter;
+    document.getElementById("chat-question").focus();
   });
 }
 
@@ -454,14 +478,40 @@ function renderPromptImprovement(payload) {
     <article class="result-card">
       <h3>Improved prompt</h3>
       <div class="prompt-improved-body mono">${escapeHtml(payload.improved_prompt)}</div>
-    </article>
-    <article class="result-card">
-      <h3>What changed</h3>
-      <ul>
-        ${(payload.changes || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-      </ul>
+      <div class="tag-row prompt-change-row">
+        ${(payload.changes || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+      </div>
     </article>
   `;
+}
+
+function buildPromptStarter(prompt) {
+  const loweredCategory = String(prompt.category || "").toLowerCase();
+  if (loweredCategory.includes("literature")) {
+    return `Use a focused PubMed search approach for this topic: ${prompt.title}.`;
+  }
+  if (loweredCategory.includes("assessment")) {
+    return `Create quiz questions from the uploaded source using the style of "${prompt.title}".`;
+  }
+  if (loweredCategory.includes("simplification")) {
+    return `Explain the uploaded content in simpler terms using the style of "${prompt.title}".`;
+  }
+  return `Use the style of "${prompt.title}" for this medical learning task.`;
+}
+
+function updatePubmedSelectionStatus() {
+  const count = getSelectedPubmedPmids().length;
+  const countLabel = document.getElementById("pubmed-selection-count");
+  const statusLabel = document.getElementById("pubmed-action-status");
+  if (countLabel) {
+    countLabel.textContent = `${count} selected`;
+  }
+  if (statusLabel) {
+    statusLabel.textContent =
+      count >= 1
+        ? "Ready for a selected-study action. Compare works best with 3 to 5 studies."
+        : "Select 3 to 5 studies for the strongest merged synthesis.";
+  }
 }
 
 async function loadPromptDetail(promptId) {
@@ -514,6 +564,11 @@ async function runSelectedPubmedAction(action) {
     enhance_prompt: document.getElementById("pubmed-enhance-toggle")?.checked || false,
     prefer_full_text: document.getElementById("pubmed-prefer-fulltext-toggle")?.checked ?? true,
   };
+
+  if (action === "compare" && (pmids.length < 3 || pmids.length > 5)) {
+    if (status) status.textContent = "Compare works with 3 to 5 selected PubMed studies.";
+    return;
+  }
 
   shell.className = "result-shell empty-state";
   shell.textContent = "Building PubMed article context...";
@@ -636,7 +691,30 @@ function bindStaticInteractions() {
     }
   });
 
+  document.getElementById("result-shell").addEventListener("change", (event) => {
+    if (event.target.matches('input[name="selected_pubmed_pmids"]')) {
+      updatePubmedSelectionStatus();
+    }
+  });
+
   document.getElementById("prompt-search-form").addEventListener("submit", searchPrompts);
+
+  document.querySelectorAll(".prompt-filter-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      document.querySelectorAll(".prompt-filter-button").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      state.promptCategory = button.dataset.category || "";
+      document.getElementById("prompt-search-category").value = state.promptCategory;
+      await searchPrompts();
+    });
+  });
+
+  document.querySelectorAll(".prompt-insert-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById("prompt-improve-input").value = button.dataset.promptText || "";
+      document.getElementById("prompt-improve-input").focus();
+    });
+  });
 
   document.getElementById("prompt-search-results").addEventListener("click", async (event) => {
     const card = event.target.closest("[data-prompt-id]");
@@ -678,3 +756,4 @@ async function boot() {
 boot().catch((error) => {
   setHealth(false, error.message);
 });
+

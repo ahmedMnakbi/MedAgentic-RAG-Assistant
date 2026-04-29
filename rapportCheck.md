@@ -2,242 +2,159 @@
 
 ## Context
 
-Project reviewed: `MedAgentic RAG Assistant`
+Project reviewed: `MARA (Medical Agent RAG Assistant)`
 
 Review date: `2026-04-29`
 
-Branch / commit reviewed:
+Branch reviewed: `main`
 
-- `main`
-- latest reviewed commit at report time: `17de9ca`
+## Browser Use Status
 
-## Important Note About Browser Use
+I retried the Browser Use plugin for this pass.
 
-I attempted to test the app with the Browser Use plugin as requested.
+Result:
 
-What happened:
-
-- the plugin runtime failed before browser control started
-- `mcp__node_repl__.js` returned: `failed to execute Node: Access is denied. (os error 5)`
+- `mcp__node_repl__.js` still failed before browser control started
+- error returned: `failed to execute Node: Access is denied. (os error 5)`
 
 Impact:
 
-- I could not complete true in-app browser automation through the plugin in this environment
-- I continued with the strongest available fallback:
-  - full automated test suite
-  - live HTTP smoke tests against the running app on `http://127.0.0.1:8000`
-  - code review of the frontend files
+- true in-app browser automation could not be completed in this environment
+- I used the strongest fallback available:
+  - full automated tests
+  - live HTTP smoke tests against `http://127.0.0.1:8000`
+  - direct checks of the rebuilt frontend assets
 
-This looks like an environment/runtime problem, not a problem in the FastAPI app itself.
+This still looks like an environment/runtime problem rather than a FastAPI app problem.
 
 ## What I Tested
 
 ### Automated
 
-- full test suite: `38 passed`
+- full test suite: `51 passed`
 
-### Live endpoint checks
+### Live app checks
 
 - `GET /`
 - `GET /health`
-- `GET /api/documents`
-- `POST /api/documents/upload`
-- `POST /api/chat/ask` for:
-  - unsafe dosage refusal
-  - summarize
-  - simplify
-  - quiz
-  - pubmed
-  - prompt_enhance
-  - rag
+- `GET /docs`
+- `POST /api/chat/ask` with PubMed search
 - `GET /api/prompts/search`
-- `GET /api/prompts/{prompt_id}`
-- `POST /api/prompts/improve`
-
-### Test file used
-
-- `C:/Users/ahmed/Downloads/8205Oxford Handbook of Clinical Medicine 10th 2017 Edition_SamanSarKo - Copy.pdf`
+- `POST /api/pubmed/transform` with:
+  - invalid compare selection count
+  - valid 3-study compare
+- static asset checks for:
+  - `MARA` branding
+  - `Prompt Studio`
+  - `Compare 3-5 studies`
 
 ## What Is Good
 
-- The API is structurally solid.
-  - Core endpoints respond correctly.
-  - Swagger and the custom web UI can coexist.
+- The app now feels like a real demo product, not just an API.
+  - MARA branding is consistent.
+  - Swagger is preserved for developer testing.
+  - the class-facing web UI is much stronger than before
 
-- The project safety boundary is partially working well.
-  - Unsafe dosage questions are refused correctly.
-  - The refusal message is clear and appropriately educational.
+- The page is more visually alive.
+  - hero illustrations are present
+  - cards have more motion and lift
+  - the layout is clearer and more modern
 
-- Upload and indexing work.
-  - The sample medical PDF uploaded successfully.
-  - The document registry and document listing worked.
+- Prompt Studio is easier to use now.
+  - recipe discovery is lighter
+  - prompt detail is less overwhelming
+  - the template stays hidden until needed
 
-- The Prompt Lab is a strong addition for demos.
-  - prompt search works
-  - prompt detail lookup works
-  - prompt improvement now behaves more like real prompt engineering and no longer injects random “exclude diagnosis/treatment/dosage/triage” wording into the user’s prompt
+- PubMed study actions are much more capable.
+  - search works
+  - selected-article workflows work
+  - merged 3-study comparison now works live
+  - compare uses its own prompt instead of reusing the generic summary path
 
-- PubMed mode is noticeably better after the recent cleanup.
-  - Natural-language PubMed requests now normalize better.
-  - Prompt-template inputs like `${chronic fatigue}` are reduced to their real topic instead of poisoning the search query.
-  - The user case around Addison’s disease now returns records instead of an empty result.
-  - Broad queries like `PubMed studies on anxiety` now benefit from relevance sorting and a stronger fielded query.
+- The compare workflow is now safer technically.
+  - the server trims multi-study context by action
+  - this prevents the live Groq request from failing on oversized compare payloads
 
-- The codebase remains modular and readable.
-  - backend logic is separated into routes, services, clients, schemas, and prompts
-  - this is good for a portfolio or classroom explanation
+- The safety boundary is still intact.
+  - unsafe diagnosis/dosage/triage/treatment requests are still blocked first
 
-- The UI concept is good for class demos.
-  - one page for upload, ask, sources, and prompt lab is a strong presentation choice
+- The architecture remains clear for a portfolio project.
+  - routes, services, clients, prompts, schemas, and web assets are all separated cleanly
 
 ## What Is Bad
 
-- Browser Use plugin testing is blocked in this environment.
-  - That means I could not certify the UI through real browser automation in this session.
-  - This is not necessarily an app bug, but it weakens confidence in true end-to-end UI behavior from the plugin perspective.
+- Browser Use testing is still blocked here.
+  - I cannot honestly claim a real plugin-driven browser E2E pass happened in this environment
 
-- `simplify` mode is too weak when the request is generic.
-  - Example tested: `Explain the uploaded document in simpler terms.`
-  - Result: `no_source`
-  - This makes the feature feel unreliable unless the question contains a topic.
+- PubMed comparison quality still depends heavily on study selection.
+  - if the user chooses loosely related papers, the synthesis can still become broad or uneven
+  - MARA now calls this out better, but selection quality still matters
 
-- `quiz` mode is too easy to derail with a generic request.
-  - Example tested: `Create quiz questions from the uploaded document.`
-  - It generated quiz items from an arbitrary psychiatric assessment chunk on page 3.
-  - For a big textbook upload, this is not what a normal user expects.
+- PubMed is still metadata/abstract/PMC dependent.
+  - full text is not guaranteed for every article
+  - the open-access URL path is still experimental
 
-- PubMed relevance is improved, but still noisy on broad topics.
-  - The Addison’s PubMed query returned results, but some were only weakly related to Addison’s disease.
-  - One result matched an author named `Addison PK`, which is a classic keyword-search false positive.
-
-- Duplicate uploads are allowed with no warning or deduplication.
-  - Uploading the same PDF again created another indexed document entry.
-  - That may confuse classroom demos and clutter retrieval.
-
-- PDF extraction quality is still imperfect.
-  - Some source excerpts still show artifacts like `suffi cient` or broken spacing.
-  - This is common with PDF extraction, but it affects polish.
-
-- The chat-level `prompt_enhance` mode is still a little confusing.
-  - The dedicated `/api/prompts/improve` behavior is clearer.
-  - But if a user types a meta-request like `make this prompt better for a document summary`, the result can still feel awkward rather than obviously useful.
+- The project still lacks real E2E UI automation.
+  - the frontend looks much better, but confidence still comes mainly from API tests plus manual/live checks
 
 ## What Still Needs Work
 
-### 1. Better whole-document workflows
+### 1. Better study-set curation in the UI
 
-Right now many modes depend on retrieval from a user query.
+Recommended next step:
 
-That works for targeted questions, but it is weak for:
+- let users mark studies as:
+  - core
+  - background
+  - outlier
+- then tune synthesis around that structure
 
-- simplify the whole upload
-- quiz the whole upload
-- summarize the whole upload
+### 2. Stronger PubMed filtering
 
-Recommended improvement:
+Recommended next step:
 
-- add explicit whole-document mode or section mode
-- let the user choose:
-  - entire document
-  - selected document
-  - selected pages
-  - retrieved passages only
-
-### 2. Better PubMed query engineering
-
-Current PubMed querying is better than before, but it is still not a full literature-search workflow.
-
-Recommended improvement:
-
-- use quoted phrases where appropriate
-- support MeSH-aware queries later
-- add optional filters:
+- add optional filters for:
   - recent years
-  - article type
-  - review vs trial
-- possibly add a small query-builder step specifically for PubMed mode
+  - study type
+  - reviews vs trials
+  - humans
 
-### 3. Clarify the safety policy at the product level
+### 3. Whole-document workflows for uploaded PDFs
 
-The current project correctly blocks personalized dosage advice.
+Recommended next step:
 
-But there is still a policy ambiguity between:
+- explicit "entire document" summarize/simplify/quiz flows
+- optional page-range targeting
 
-- general educational discussion of diagnosis/treatment concepts
-- prohibited clinical advice
+### 4. Duplicate-upload handling
 
-Recommended improvement:
+Recommended next step:
 
-- define this explicitly in the README and UI copy
-- enforce it consistently across:
-  - summarize
-  - rag
-  - simplify
-  - quiz
-  - pubmed synthesis if added later
+- detect re-uploads by hash
+- warn or reuse existing indexing
 
-### 4. Improve prompt engineering behavior further
+### 5. Real browser E2E coverage
 
-The prompt improver is much better now, but it still needs to feel like a proper utility.
+Recommended next step:
 
-Recommended improvement:
+- once browser automation works in the environment, add a small test path for:
+  - upload
+  - ask
+  - PubMed result selection
+  - compare
+  - prompt improvement
 
-- return multiple improved variants
-- allow styles such as:
-  - concise
-  - structured
-  - chain-of-thought-hidden but robust
-  - JSON-oriented
-  - search-oriented
-- show why one version is stronger than another
+## Practical Verdict
 
-### 5. Deduplicate or warn on re-upload
+MARA is now a strong student demo project.
 
-Recommended improvement:
+It has:
 
-- hash uploaded files
-- detect same-file re-upload
-- either:
-  - block duplicates
-  - warn the user
-  - or offer “re-index existing document”
+- a real RAG backend
+- medical safety boundaries
+- PubMed integration
+- study generation features
+- a proper demo UI
+- a developer-facing Swagger surface
 
-### 6. UI verification and E2E testing
-
-This is the biggest process gap now.
-
-Recommended improvement:
-
-- add true end-to-end UI tests when browser automation is available
-- even lightweight Playwright tests would help validate:
-  - upload flow
-  - prompt lab
-  - document picker
-  - PubMed result rendering
-  - error states
-
-## My Practical Verdict
-
-This is already a good student portfolio project and a good classroom demo project.
-
-Why:
-
-- it has a real backend architecture
-- it uses RAG, vector storage, external APIs, safety logic, and prompt tooling
-- it now has a user-facing demo interface instead of only Swagger
-
-But it is not fully polished yet.
-
-If I had to summarize the current state in one sentence:
-
-> The project is strong architecturally and demo-worthy now, but it still needs better whole-document UX, better PubMed relevance, and better true end-to-end frontend testing to feel fully mature.
-
-## Best Next Steps
-
-If continuing from here, I would prioritize:
-
-1. Whole-document summarize / simplify / quiz modes
-2. Better PubMed query building and filtering
-3. Duplicate-upload handling
-4. Real browser E2E testing
-5. Better prompt improver variants and UX
+The biggest remaining gap is not architecture. It is polish around retrieval quality, study selection quality, and true browser E2E confidence.

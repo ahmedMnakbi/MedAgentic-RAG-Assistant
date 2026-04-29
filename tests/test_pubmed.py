@@ -80,6 +80,66 @@ def test_transform_selected_pubmed_articles_returns_summary(client, app, monkeyp
     assert payload["selected_sources"][0]["pmid"] == "39738916"
 
 
+def test_transform_selected_pubmed_articles_compare_returns_merged_answer(client, app, monkeypatch):
+    monkeypatch.setattr(
+        app.state.services.pubmed_service,
+        "collect_selected_sources",
+        lambda *args, **kwargs: (
+            [
+                PubMedContextSource(
+                    title="Study A",
+                    text="Source A.",
+                    source_type="abstract_only",
+                    source_url="https://pubmed.ncbi.nlm.nih.gov/1/",
+                    pmid="1",
+                ),
+                PubMedContextSource(
+                    title="Study B",
+                    text="Source B.",
+                    source_type="abstract_only",
+                    source_url="https://pubmed.ncbi.nlm.nih.gov/2/",
+                    pmid="2",
+                ),
+                PubMedContextSource(
+                    title="Study C",
+                    text="Source C.",
+                    source_type="abstract_only",
+                    source_url="https://pubmed.ncbi.nlm.nih.gov/3/",
+                    pmid="3",
+                ),
+            ],
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        app.state.services.summarization_service,
+        "compare_context",
+        lambda *args, **kwargs: "Merged comparison across selected studies.",
+    )
+
+    response = client.post(
+        "/api/pubmed/transform",
+        json={"pmids": ["1", "2", "3"], "action": "compare"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["answer"] == "Merged comparison across selected studies."
+
+
+def test_transform_selected_pubmed_articles_compare_requires_multiple_pmids(client):
+    response = client.post(
+        "/api/pubmed/transform",
+        json={"pmids": ["39738916"], "action": "compare"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "no_source"
+    assert "3 to 5" in payload["answer"]
+
+
 def test_transform_selected_pubmed_articles_populates_quiz_source_titles(client, app, monkeypatch):
     monkeypatch.setattr(
         app.state.services.pubmed_service,
@@ -152,6 +212,18 @@ def test_open_access_url_transform_uses_imported_source(client, app, monkeypatch
     assert payload["selected_sources"][0]["source_type"] == "open_access_url"
 
 
+def test_open_access_url_compare_is_rejected(client):
+    response = client.post(
+        "/api/pubmed/import-url",
+        json={"url": "https://example.org/article", "action": "compare"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "no_source"
+    assert "not available for a single imported url" in payload["answer"].lower()
+
+
 def test_transform_selected_pubmed_articles_refuses_unsafe_request(client):
     response = client.post(
         "/api/pubmed/transform",
@@ -212,6 +284,37 @@ def test_pubmed_service_rejects_localhost_import_url():
 
     with pytest.raises(AppError):
         service.import_open_access_url("http://127.0.0.1:8000/private")
+
+
+def test_fit_sources_for_compare_trims_large_context():
+    service = PubMedService(ncbi_client=object())
+    sources = [
+        PubMedContextSource(
+            title="Study A",
+            text="A" * 7000,
+            source_type="abstract_only",
+            source_url="https://pubmed.ncbi.nlm.nih.gov/1/",
+            pmid="1",
+        ),
+        PubMedContextSource(
+            title="Study B",
+            text="B" * 7000,
+            source_type="abstract_only",
+            source_url="https://pubmed.ncbi.nlm.nih.gov/2/",
+            pmid="2",
+        ),
+        PubMedContextSource(
+            title="Study C",
+            text="C" * 7000,
+            source_type="abstract_only",
+            source_url="https://pubmed.ncbi.nlm.nih.gov/3/",
+            pmid="3",
+        ),
+    ]
+
+    trimmed = service.fit_sources_for_action(sources, action="compare")
+
+    assert all(len(item.text) <= 3203 for item in trimmed)
 
 
 def test_import_open_access_url_uses_official_pmc_path(monkeypatch):

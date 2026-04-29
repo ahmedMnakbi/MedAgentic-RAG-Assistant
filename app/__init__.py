@@ -1,1 +1,1 @@
-"""MedAgentic RAG Assistant application package."""
+"""MARA application package."""

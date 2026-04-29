@@ -12,6 +12,7 @@
   --danger: #b23a48;
   --ok: #2f7d32;
   --shadow: 0 24px 60px rgba(33, 51, 48, 0.12);
+  --shadow-soft: 0 14px 30px rgba(33, 51, 48, 0.08);
   --radius-xl: 26px;
   --radius-lg: 18px;
   --radius-md: 12px;
@@ -56,6 +57,15 @@ body::before {
   background: var(--surface);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
+  transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease;
+}
+
+.panel:hover,
+.hero-card:hover,
+.topbar:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 28px 64px rgba(33, 51, 48, 0.16);
+  border-color: rgba(0, 138, 122, 0.22);
 }
 
 .topbar {
@@ -125,6 +135,10 @@ body::before {
   font-size: 0.95rem;
 }
 
+.status-pill.ok {
+  animation: pulseGlow 2.4s ease-in-out infinite;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -150,6 +164,8 @@ body::before {
 .hero-card {
   padding: 24px;
   border-radius: var(--radius-xl);
+  position: relative;
+  overflow: hidden;
 }
 
 .hero-card h2 {
@@ -161,14 +177,16 @@ body::before {
   line-height: 1.65;
 }
 
-.hero-card-accent {
-  background: linear-gradient(135deg, rgba(0, 138, 122, 0.95), rgba(0, 105, 92, 0.88));
-  color: #f8fff8;
-}
-
-.hero-card-accent p,
-.hero-card-accent .card-kicker {
-  color: rgba(248, 255, 248, 0.86);
+.hero-card-main::after {
+  content: "";
+  position: absolute;
+  right: -48px;
+  bottom: -48px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 138, 122, 0.16), transparent 70%);
+  pointer-events: none;
 }
 
 .hero-notes {
@@ -184,6 +202,69 @@ body::before {
   background: rgba(255, 255, 255, 0.84);
   border: 1px solid var(--line);
   font-size: 0.92rem;
+}
+
+.hero-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.mini-metric {
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(24, 58, 55, 0.1);
+  box-shadow: var(--shadow-soft);
+}
+
+.mini-metric strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.mini-metric p {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.hero-visual-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: linear-gradient(145deg, rgba(9, 138, 123, 0.08), rgba(255, 248, 238, 0.92));
+}
+
+.hero-illustration {
+  width: 100%;
+  max-width: 100%;
+  animation: floatCard 6s ease-in-out infinite;
+  filter: drop-shadow(0 24px 32px rgba(0, 105, 92, 0.14));
+}
+
+.hero-orbit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.floating-pill {
+  padding: 9px 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(24, 58, 55, 0.12);
+  box-shadow: var(--shadow-soft);
+  animation: floatPill 7s ease-in-out infinite;
+}
+
+.floating-pill:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.floating-pill:nth-child(3) {
+  animation-delay: 1.6s;
 }
 
 .workspace-grid {
@@ -213,6 +294,13 @@ body::before {
 
 .panel-header h2 {
   font-size: 1.75rem;
+}
+
+.panel-illustration {
+  width: 136px;
+  max-width: 34%;
+  align-self: center;
+  filter: drop-shadow(0 18px 26px rgba(0, 105, 92, 0.08));
 }
 
 .panel-divider {
@@ -352,6 +440,17 @@ body::before {
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.78);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.document-card:hover,
+.prompt-card:hover,
+.source-card:hover,
+.pubmed-card:hover,
+.quiz-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 138, 122, 0.24);
+  box-shadow: var(--shadow-soft);
 }
 
 .document-card label {
@@ -454,6 +553,7 @@ body::before {
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.86);
+  animation: cardFade 0.34s ease;
 }
 
 .result-topline {
@@ -494,6 +594,55 @@ body::before {
   box-shadow: inset 0 0 0 1px rgba(0, 138, 122, 0.18);
 }
 
+.prompt-card p {
+  margin-top: 0;
+}
+
+.prompt-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.prompt-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tag-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.prompt-filter-button.active {
+  color: #f9fff7;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  box-shadow: 0 14px 24px rgba(0, 105, 92, 0.18);
+}
+
+.compact-search-form {
+  gap: 12px;
+}
+
+.advanced-prompt-filters {
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line);
+  padding: 0 14px 12px;
+}
+
+.advanced-prompt-filters summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 14px 0;
+}
+
+.advanced-prompt-filters[open] summary {
+  margin-bottom: 8px;
+}
+
 .prompt-detail,
 .prompt-improve-result {
   display: flex;
@@ -520,8 +669,76 @@ body::before {
   gap: 10px;
 }
 
+.prompt-change-row {
+  margin-top: 14px;
+}
+
+.prompt-change-row span {
+  display: inline-flex;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(0, 138, 122, 0.08);
+  border: 1px solid rgba(0, 138, 122, 0.12);
+}
+
+.template-disclosure {
+  margin-top: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(24, 58, 55, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+}
+
+.template-disclosure summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 12px 14px;
+}
+
+.template-disclosure .prompt-template {
+  padding: 0 14px 14px;
+}
+
 .mono {
   font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+@keyframes floatCard {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes floatPill {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(47, 125, 50, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(47, 125, 50, 0.02);
+  }
+}
+
+@keyframes cardFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 1200px) {
@@ -550,6 +767,10 @@ body::before {
   }
 
   .compact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-mini-grid {
     grid-template-columns: 1fr;
   }
 }

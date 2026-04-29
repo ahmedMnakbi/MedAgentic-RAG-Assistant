@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "MedAgentic RAG Assistant"
+    app_name: str = "MARA"
     app_env: str = "development"
     app_debug: bool = False
     api_prefix: str = "/api"
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     retrieval_score_threshold: float = 1.35
 
     ncbi_email: str | None = None
-    ncbi_tool: str = "MedAgenticRAGAssistant"
+    ncbi_tool: str = "MARA"
     ncbi_api_key: SecretStr | None = None
     pubmed_base_url: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 

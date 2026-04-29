@@ -171,6 +171,29 @@ class PubMedService:
             source_url=parsed.geturl(),
         )
 
+    def fit_sources_for_action(
+        self,
+        sources: list[PubMedContextSource],
+        *,
+        action: str,
+    ) -> list[PubMedContextSource]:
+        if not sources:
+            return sources
+
+        max_chars = 12000
+        if action == "compare":
+            max_chars = 3200 if len(sources) >= 3 else 4500
+        elif action == "quiz" and len(sources) >= 3:
+            max_chars = 2800
+        elif len(sources) >= 3:
+            max_chars = 4000
+        elif len(sources) == 2:
+            max_chars = 5500
+
+        for source in sources:
+            source.text = self._truncate_context(source.text, max_chars=max_chars)
+        return sources
+
     @staticmethod
     def build_context(sources: list[PubMedContextSource]) -> str:
         parts = []
@@ -194,6 +217,11 @@ class PubMedService:
             return f"Summarize the selected PubMed {noun} for educational study purposes."
         if action == "simplify":
             return f"Explain the selected PubMed {noun} in simpler educational language."
+        if action == "compare":
+            return (
+                f"Compare and synthesize the selected PubMed {noun} for study purposes. "
+                "Highlight shared themes, important differences, and notable limitations."
+            )
         return f"Create study quiz questions from the selected PubMed {noun}."
 
     @staticmethod
@@ -301,7 +329,7 @@ class PubMedService:
     @staticmethod
     def _fetch_html(url: str) -> str:
         headers = {
-            "User-Agent": "MedAgenticRAGAssistant/1.2 (educational project)",
+            "User-Agent": "MARA/1.3 (educational project)",
         }
         try:
             response = httpx.get(url, headers=headers, timeout=20.0, follow_redirects=True)

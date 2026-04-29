@@ -31,7 +31,7 @@ TREATMENT_PATTERN = re.compile(
 
 def clean_extracted_text(text: str) -> str:
     value = (text or "").translate(TEXT_REPLACEMENTS)
-    if any(marker in value for marker in ("â", "Ã", "ï")):
+    if any(marker in value for marker in ("\u00c3", "\u00e2", "\u00ef", "\u00c2")):
         try:
             repaired = value.encode("latin-1").decode("utf-8")
         except UnicodeError:

@@ -68,7 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=resolved_settings.app_name,
         description=APP_DESCRIPTION,
         debug=resolved_settings.app_debug,
-        version="1.2.0",
+        version="1.3.0",
     )
     app.state.settings = resolved_settings
     app.state.services = build_services(resolved_settings)

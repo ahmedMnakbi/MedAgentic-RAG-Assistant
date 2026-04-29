@@ -43,6 +43,13 @@ def _run_action(
             enhanced_prompt=enhanced_prompt,
             context_label="Selected PubMed article context",
         )
+    if action == "compare":
+        return services.summarization_service.compare_context(
+            question,
+            context,
+            enhanced_prompt=enhanced_prompt,
+            context_label="Selected PubMed article context",
+        )
     if action == "simplify":
         return services.simplification_service.simplify_context(
             question,
@@ -62,6 +69,14 @@ def _run_action(
 @router.post("/transform", response_model=PubMedTransformResponse)
 def transform_selected_articles(payload: PubMedTransformRequest, request: Request) -> PubMedTransformResponse:
     services = _get_services(request)
+    if payload.action == "compare" and not 3 <= len(payload.pmids) <= 5:
+        return PubMedTransformResponse(
+            status="no_source",
+            action=payload.action,
+            answer="Select 3 to 5 PubMed studies to generate a merged comparison or synthesis.",
+            safety=services.safety_service.assess("Compare selected PubMed studies"),
+            warnings=["Comparison is designed for 3 to 5 selected PubMed studies in this version."],
+        )
     question = payload.question or services.pubmed_service.default_question(
         payload.action,
         source_count=len(payload.pmids),
@@ -81,6 +96,7 @@ def transform_selected_articles(payload: PubMedTransformRequest, request: Reques
         payload.pmids,
         prefer_full_text=payload.prefer_full_text,
     )
+    sources = services.pubmed_service.fit_sources_for_action(sources, action=payload.action)
     context = services.pubmed_service.build_context(sources)
     if not context:
         return PubMedTransformResponse(
@@ -130,6 +146,14 @@ def transform_selected_articles(payload: PubMedTransformRequest, request: Reques
 @router.post("/import-url", response_model=PubMedTransformResponse)
 def transform_open_access_url(payload: PubMedUrlTransformRequest, request: Request) -> PubMedTransformResponse:
     services = _get_services(request)
+    if payload.action == "compare":
+        return PubMedTransformResponse(
+            status="no_source",
+            action=payload.action,
+            answer="Comparison needs multiple selected PubMed studies, so it is not available for a single imported URL.",
+            safety=services.safety_service.assess("Compare selected PubMed studies"),
+            warnings=["Use the PubMed search flow when you want a merged comparison across studies."],
+        )
     question = payload.question or services.pubmed_service.default_question(payload.action, source_count=1)
     safety = services.safety_service.assess(question)
     if not safety.allowed:

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MedAgentic RAG Assistant</title>
+    <title>MARA | Medical Agent RAG Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,12 +16,12 @@
     <div class="page-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Educational Medical RAG</p>
-          <h1>MedAgentic RAG Assistant</h1>
+          <p class="eyebrow">MARA | Medical Agent RAG Assistant</p>
+          <h1>MARA</h1>
           <p class="subhead">
-            Upload medical PDFs, run source-grounded study workflows, explore PubMed metadata,
-            select PubMed articles for summary or quiz workflows, and demo the system through a
-            cleaner interface while keeping Swagger for developers.
+            Upload medical PDFs, run source-grounded study workflows, search PubMed, compare
+            multiple selected studies, and demonstrate the system through a cleaner classroom-ready
+            interface while keeping Swagger for developer testing.
           </p>
         </div>
         <div class="topbar-actions">
@@ -34,27 +34,38 @@
       </header>
 
       <section class="hero-grid">
-        <article class="hero-card">
+        <article class="hero-card hero-card-main">
           <p class="card-kicker">Class Demo Flow</p>
-          <h2>Upload, ask, compare, explain.</h2>
+          <h2>Upload, ask, synthesize, teach.</h2>
           <p>
             Use the left side to ingest a PDF and manage indexed documents. Use the right side to
-            test RAG, summaries, simplification, quizzes, PubMed, and prompt engineering.
+            test MARA's RAG, simplification, quizzes, multi-study PubMed synthesis, and lighter
+            prompt tooling.
           </p>
           <div class="hero-notes">
             <span>Safety-first refusal</span>
             <span>Source-grounded answers</span>
-            <span>PubMed article actions</span>
-            <span>Prompt Lab included</span>
+            <span>Multi-study comparison</span>
+            <span>Prompt Studio</span>
+          </div>
+          <div class="hero-mini-grid">
+            <article class="mini-metric">
+              <strong>PDF mode</strong>
+              <p>Grounded answers, summaries, simplification, and revision quizzes from uploaded course material.</p>
+            </article>
+            <article class="mini-metric">
+              <strong>PubMed mode</strong>
+              <p>Metadata search, PMC full-text fallback, and merged synthesis across selected studies.</p>
+            </article>
           </div>
         </article>
-        <article class="hero-card hero-card-accent">
-          <p class="card-kicker">Important Note</p>
-          <h2>First upload can be slower.</h2>
-          <p>
-            On a fresh machine the embedding model may download during the first indexing pass.
-            After that, uploads and retrieval should feel much faster.
-          </p>
+        <article class="hero-card hero-visual-card">
+          <img class="hero-illustration" src="/static/mara-hero.svg" alt="MARA workflow illustration" />
+          <div class="hero-orbit">
+            <span class="floating-pill">PDF -> Chunk -> Embed</span>
+            <span class="floating-pill">PubMed -> PMC -> Compare</span>
+            <span class="floating-pill">Prompt Studio</span>
+          </div>
         </article>
       </section>
 
@@ -175,101 +186,142 @@
         <section class="panel stack-panel prompt-panel">
           <div class="panel-header">
             <div>
-              <p class="card-kicker">Prompt Lab</p>
-              <h2>Search, inspect, improve</h2>
+              <p class="card-kicker">Prompt Studio</p>
+              <h2>Pick a recipe or refine your own</h2>
             </div>
+            <img class="panel-illustration" src="/static/mara-prompt.svg" alt="Prompt studio illustration" />
           </div>
 
-          <form id="prompt-search-form" class="stack-form">
-            <label class="field">
-              <span>Search prompt library</span>
-              <input
-                id="prompt-search-query"
-                name="query"
-                type="text"
-                placeholder="Search prompts for summary, PubMed, quiz, comparison..."
-              />
-            </label>
+          <div class="prompt-studio">
+            <section class="prompt-block">
+              <div class="section-headline">
+                <h3>1. Choose a prompt recipe</h3>
+                <span class="microcopy">Search lightly or tap a category. MARA will show the clearest matches first.</span>
+              </div>
 
-            <div class="compact-grid">
-              <label class="field">
-                <span>Type</span>
-                <select id="prompt-search-type">
-                  <option value="">All</option>
-                  <option value="TEXT">TEXT</option>
-                  <option value="STRUCTURED">STRUCTURED</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Category</span>
-                <select id="prompt-search-category">
-                  <option value="">All</option>
-                  <option value="medical-education">medical-education</option>
-                  <option value="summarization">summarization</option>
-                  <option value="simplification">simplification</option>
-                  <option value="assessment">assessment</option>
-                  <option value="literature-search">literature-search</option>
-                  <option value="study-tools">study-tools</option>
-                  <option value="teaching">teaching</option>
-                </select>
-              </label>
-            </div>
+              <div class="tag-filter-row">
+                <button type="button" class="chip-button prompt-filter-button active" data-category="">All</button>
+                <button type="button" class="chip-button prompt-filter-button" data-category="summarization">Summary</button>
+                <button type="button" class="chip-button prompt-filter-button" data-category="simplification">Simplify</button>
+                <button type="button" class="chip-button prompt-filter-button" data-category="assessment">Quiz</button>
+                <button type="button" class="chip-button prompt-filter-button" data-category="literature-search">PubMed</button>
+              </div>
 
-            <button class="secondary-button" type="submit">Search prompts</button>
-          </form>
+              <form id="prompt-search-form" class="stack-form compact-search-form">
+                <label class="field">
+                  <span>Search prompt recipes</span>
+                  <input
+                    id="prompt-search-query"
+                    name="query"
+                    type="text"
+                    placeholder="Try: summary, compare, PubMed, quiz..."
+                  />
+                </label>
 
-          <div id="prompt-search-results" class="prompt-results empty-state">
-            Search results will appear here.
-          </div>
+                <details class="advanced-prompt-filters">
+                  <summary>Advanced filters</summary>
+                  <div class="compact-grid">
+                    <label class="field">
+                      <span>Type</span>
+                      <select id="prompt-search-type">
+                        <option value="">All</option>
+                        <option value="TEXT">TEXT</option>
+                        <option value="STRUCTURED">STRUCTURED</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Category</span>
+                      <select id="prompt-search-category">
+                        <option value="">All</option>
+                        <option value="medical-education">medical-education</option>
+                        <option value="summarization">summarization</option>
+                        <option value="simplification">simplification</option>
+                        <option value="assessment">assessment</option>
+                        <option value="literature-search">literature-search</option>
+                        <option value="study-tools">study-tools</option>
+                        <option value="teaching">teaching</option>
+                      </select>
+                    </label>
+                  </div>
+                </details>
 
-          <div class="panel-divider"></div>
+                <button class="secondary-button" type="submit">Find recipes</button>
+              </form>
 
-          <div class="section-headline">
-            <h3>Prompt details</h3>
-            <span class="microcopy">Click a result to inspect variables and template text.</span>
-          </div>
-          <div id="prompt-detail" class="prompt-detail empty-state">
-            No prompt selected yet.
-          </div>
+              <div id="prompt-search-results" class="prompt-results empty-state">
+                Search results will appear here.
+              </div>
+            </section>
 
-          <div class="panel-divider"></div>
+            <section class="prompt-block">
+              <div class="section-headline">
+                <h3>2. Inspect the selected recipe</h3>
+                <span class="microcopy">Use this as a guide, then load it into the improver if you want to customize it.</span>
+              </div>
+              <div id="prompt-detail" class="prompt-detail empty-state">
+                No recipe selected yet.
+              </div>
+            </section>
 
-          <form id="prompt-improve-form" class="stack-form">
-            <label class="field">
-              <span>Improve a prompt</span>
-              <textarea
-                id="prompt-improve-input"
-                rows="6"
-                placeholder="Paste a rough prompt here, or load one from the library."
-                required
-              ></textarea>
-            </label>
+            <section class="prompt-block">
+              <div class="section-headline">
+                <h3>3. Refine your own prompt</h3>
+                <span class="microcopy">Paste a rough prompt and MARA will tighten it without changing your meaning.</span>
+              </div>
 
-            <div class="compact-grid">
-              <label class="field">
-                <span>Output type</span>
-                <select id="prompt-output-type">
-                  <option value="text">text</option>
-                  <option value="image">image</option>
-                  <option value="video">video</option>
-                  <option value="sound">sound</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Output format</span>
-                <select id="prompt-output-format">
-                  <option value="text">text</option>
-                  <option value="structured_json">structured_json</option>
-                  <option value="structured_yaml">structured_yaml</option>
-                </select>
-              </label>
-            </div>
+              <div class="quick-queries">
+                <button type="button" class="chip-button prompt-insert-button" data-prompt-text="Summarize this medical topic for first-year students in a short bullet list.">
+                  Study summary
+                </button>
+                <button type="button" class="chip-button prompt-insert-button" data-prompt-text="Turn this medical explanation into simpler plain language without adding new facts.">
+                  Plain-language rewrite
+                </button>
+                <button type="button" class="chip-button prompt-insert-button" data-prompt-text="Build a focused PubMed search prompt about this medical topic.">
+                  PubMed search helper
+                </button>
+              </div>
 
-            <button class="primary-button" type="submit">Improve prompt</button>
-          </form>
+              <form id="prompt-improve-form" class="stack-form">
+                <label class="field">
+                  <span>Your rough prompt</span>
+                  <textarea
+                    id="prompt-improve-input"
+                    rows="5"
+                    placeholder="Paste a rough prompt here, or load one from the recipe list."
+                    required
+                  ></textarea>
+                </label>
 
-          <div id="prompt-improve-result" class="prompt-improve-result empty-state">
-            Improved prompt output will appear here.
+                <details class="advanced-prompt-filters">
+                  <summary>Output settings</summary>
+                  <div class="compact-grid">
+                    <label class="field">
+                      <span>Output type</span>
+                      <select id="prompt-output-type">
+                        <option value="text">text</option>
+                        <option value="image">image</option>
+                        <option value="video">video</option>
+                        <option value="sound">sound</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Output format</span>
+                      <select id="prompt-output-format">
+                        <option value="text">text</option>
+                        <option value="structured_json">structured_json</option>
+                        <option value="structured_yaml">structured_yaml</option>
+                      </select>
+                    </label>
+                  </div>
+                </details>
+
+                <button class="primary-button" type="submit">Improve prompt</button>
+              </form>
+
+              <div id="prompt-improve-result" class="prompt-improve-result empty-state">
+                Improved prompt output will appear here.
+              </div>
+            </section>
           </div>
         </section>
       </main>
@@ -278,3 +330,4 @@
     <script src="/static/app.js"></script>
   </body>
 </html>
+

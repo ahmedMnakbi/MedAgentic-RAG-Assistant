@@ -1,8 +1,8 @@
-# MedAgentic RAG Assistant
+# MARA
 
-MedAgentic RAG Assistant is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, explore PubMed metadata, and improve prompts through an internal prompt lab.
+MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, search PubMed, compare selected studies, and refine prompts through a simpler Prompt Studio.
 
-`v1.2` adds selected PubMed article actions, PMC full-text fallback, and an experimental open-access URL import flow while keeping Swagger at `/docs` for developer testing.
+`v1.3` adds multi-study PubMed comparison and synthesis, a lighter Prompt Studio, a more interactive web UI, and MARA branding while keeping Swagger at `/docs` for developer testing.
 
 ## Safety Boundary
 
@@ -14,7 +14,7 @@ MedAgentic RAG Assistant is a FastAPI project for **medical education and docume
   - personalized treatment recommendations
 - It is built for learning, demonstrations, and portfolio use.
 
-## What v1.2 Includes
+## What v1.3 Includes
 
 - FastAPI backend with Swagger docs
 - interactive web UI at `/`
@@ -32,11 +32,12 @@ MedAgentic RAG Assistant is a FastAPI project for **medical education and docume
 - safety-first refusal logic
 - PubMed metadata search through NCBI E-utilities
 - selected PubMed article summarize / simplify / quiz workflows
+- multi-study PubMed comparison and merged synthesis
 - PMC full-text fallback when a selected PubMed result has a PMCID
 - experimental import of readable open-access article URLs
-- internal prompt library and prompt improver inspired by Prompt Finder & Enhancer / prompts.chat
+- internal prompt library and a lighter Prompt Studio inspired by Prompt Finder & Enhancer / prompts.chat
 
-## What v1.2 Still Does Not Include
+## What v1.3 Still Does Not Include
 
 - authentication
 - deployment
@@ -62,7 +63,7 @@ flowchart TD
     C --> D["Rule-Based Router"]
     D --> E["Document RAG Path"]
     D --> F["PubMed Search + Article Actions"]
-    D --> G["Prompt Lab Path"]
+    D --> G["Prompt Studio Path"]
     E --> H["PDF Parsing + Chunking"]
     H --> I["Embeddings"]
     I --> J["ChromaDB"]
@@ -133,9 +134,7 @@ Then open:
 - web app: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 - Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-Note:
-
-- the first PDF upload can be slower on a fresh machine because the embedding model may download once
+The first PDF upload on a fresh machine can still take longer because the embedding model may download once.
 
 ## Main Endpoints
 
@@ -206,7 +205,7 @@ Rules:
 ### `POST /api/prompts/improve`
 
 - improves a rough prompt while preserving meaning
-- adds structure, output expectations, and medical-education safety constraints
+- adds structure and output expectations without changing the task
 - does not add new medical facts
 
 Example:
@@ -226,6 +225,7 @@ Example:
 - falls back to PubMed abstract text
 - supports:
   - `summarize`
+  - `compare`
   - `simplify`
   - `quiz`
 
@@ -260,16 +260,16 @@ The class-demo interface at `/` has three areas:
   - switch between modes
   - compare `top_k`
   - toggle prompt enhancement
-  - select PubMed results for summary, simplification, or quizzes
+  - select PubMed results for summary, comparison, simplification, or quizzes
   - try experimental open-access URL import
-- `Prompt Lab`
-  - search built-in prompt templates
-  - inspect prompt variables
-  - improve prompts with a skill-like flow
+- `Prompt Studio`
+  - search built-in prompt recipes
+  - inspect variables without reading a wall of template text
+  - improve prompts with a lighter flow
 
 Swagger remains available for low-level API testing.
 
-## Prompt Lab Design
+## Prompt Studio Design
 
 The prompt features are inspired by Prompt Finder & Enhancer / prompts.chat, but implemented locally for this project.
 
@@ -293,9 +293,9 @@ Current limitation:
 5. Ask a grounded study question and show sources.
 6. Switch to `summarize`, `simplify`, and `quiz`.
 7. Use a PubMed question to show literature metadata.
-8. Select a PubMed result and run `summarize`, `simplify`, or `quiz`.
+8. Select multiple PubMed studies and run `compare` or `summarize`.
 9. Optionally demonstrate the open-access article URL import.
-10. Open `Prompt Lab` and improve a rough prompt live.
+10. Open `Prompt Studio` and improve a rough prompt live.
 
 ## Project Structure
 
@@ -321,9 +321,9 @@ Run the automated suite:
 pytest
 ```
 
-Current local baseline for `v1.2`:
+Current local baseline for `v1.3`:
 
-- `47` tests passing
+- `51` tests passing
 
 ## Current Limitations
 
@@ -335,9 +335,9 @@ Current local baseline for `v1.2`:
 - no authentication or multi-user support
 - no deployment pipeline yet
 
-## Good Next Steps After v1.2
+## Good Next Steps After v1.3
 
-- add multi-article PubMed synthesis across selected studies
+- add true side-by-side comparison tables and evidence-agreement views for selected studies
 - add post-generation safety checking
 - add richer source citation formatting in the UI
 - add Docker for easier classroom demos

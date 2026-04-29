@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 APP_DESCRIPTION = (
-    "MedAgentic RAG Assistant is an educational medical document assistant. "
+    "MARA, the Medical Agent RAG Assistant, is an educational medical document assistant. "
     "It helps with document understanding, retrieval, summarization, simplification, "
-    "study quizzes, PubMed search, selected PubMed article workflows, and prompt tools. "
+    "study quizzes, PubMed search, selected PubMed article workflows, and prompt studio tools. "
     "It does not provide diagnosis, dosage advice, emergency triage, or personalized treatment."
 )
 

@@ -80,7 +80,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         warnings = []
         if pubmed_results:
             warnings.append(
-                "PubMed search returns metadata cards here. In v1.2, you can now select results and run summarize, simplify, or quiz actions on abstracts or PMC full text."
+                "PubMed search returns metadata cards here. You can select results and run summarize, compare, simplify, or quiz actions on abstracts or PMC full text."
             )
         return AskResponse(
             status="ok",

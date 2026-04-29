@@ -1,0 +1,39 @@
+<svg width="640" height="420" viewBox="0 0 640 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="60" y1="40" x2="560" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A8A7B"/>
+      <stop offset="1" stop-color="#E07A3F"/>
+    </linearGradient>
+    <linearGradient id="card" x1="198" y1="78" x2="420" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#F7EFE2"/>
+    </linearGradient>
+  </defs>
+  <rect x="28" y="24" width="584" height="372" rx="36" fill="url(#bg)" opacity="0.14"/>
+  <circle cx="112" cy="110" r="42" fill="#FFF7EA" opacity="0.7"/>
+  <circle cx="522" cy="84" r="28" fill="#FFF7EA" opacity="0.65"/>
+  <circle cx="548" cy="298" r="56" fill="#FFF7EA" opacity="0.35"/>
+  <circle cx="98" cy="320" r="64" fill="#FFF7EA" opacity="0.25"/>
+
+  <path d="M161 188C161 162.595 181.595 142 207 142H429C454.405 142 475 162.595 475 188V265C475 290.405 454.405 311 429 311H207C181.595 311 161 290.405 161 265V188Z" fill="url(#card)"/>
+  <path d="M193 173C193 161.402 202.402 152 214 152H422C433.598 152 443 161.402 443 173V278C443 289.598 433.598 299 422 299H214C202.402 299 193 289.598 193 278V173Z" stroke="#0A8A7B" stroke-opacity="0.18" stroke-width="2"/>
+
+  <rect x="221" y="184" width="126" height="16" rx="8" fill="#DDEEE8"/>
+  <rect x="221" y="212" width="178" height="12" rx="6" fill="#E7F4EF"/>
+  <rect x="221" y="232" width="144" height="12" rx="6" fill="#E7F4EF"/>
+  <rect x="221" y="252" width="162" height="12" rx="6" fill="#E7F4EF"/>
+
+  <path d="M404 189C404 183.477 408.477 179 414 179H416.5C422.023 179 426.5 183.477 426.5 189V191.5C426.5 197.023 422.023 201.5 416.5 201.5H414C408.477 201.5 404 197.023 404 191.5V189Z" fill="#0A8A7B"/>
+  <path d="M404 217C404 211.477 408.477 207 414 207H416.5C422.023 207 426.5 211.477 426.5 217V219.5C426.5 225.023 422.023 229.5 416.5 229.5H414C408.477 229.5 404 225.023 404 219.5V217Z" fill="#0A8A7B" opacity="0.7"/>
+  <path d="M404 245C404 239.477 408.477 235 414 235H416.5C422.023 235 426.5 239.477 426.5 245V247.5C426.5 253.023 422.023 257.5 416.5 257.5H414C408.477 257.5 404 253.023 404 247.5V245Z" fill="#E07A3F"/>
+
+  <path d="M113 118C113 88.7289 136.729 65 166 65C195.271 65 219 88.7289 219 118C219 147.271 195.271 171 166 171C136.729 171 113 147.271 113 118Z" fill="#FFF7EA"/>
+  <path d="M166 86V150" stroke="#0A8A7B" stroke-width="12" stroke-linecap="round"/>
+  <path d="M134 118H198" stroke="#0A8A7B" stroke-width="12" stroke-linecap="round"/>
+
+  <rect x="84" y="234" width="156" height="52" rx="18" fill="#FFF7EA"/>
+  <text x="109" y="266" fill="#183A37" font-family="Arial, sans-serif" font-size="18" font-weight="700">PDF → RAG → Study</text>
+
+  <rect x="404" y="325" width="166" height="52" rx="18" fill="#FFF7EA"/>
+  <text x="430" y="357" fill="#183A37" font-family="Arial, sans-serif" font-size="18" font-weight="700">PubMed → PMC</text>
+</svg>

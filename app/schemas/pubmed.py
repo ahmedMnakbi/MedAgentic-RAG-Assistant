@@ -8,7 +8,7 @@ from app.schemas.common import QuizItem
 from app.schemas.safety import SafetyAssessment
 
 PubMedContentAvailability = Literal["metadata_only", "abstract_only", "pmc_full_text"]
-PubMedAction = Literal["summarize", "simplify", "quiz"]
+PubMedAction = Literal["summarize", "simplify", "quiz", "compare"]
 PubMedResponseStatus = Literal["ok", "refused", "no_source"]
 PubMedSourceType = Literal["abstract_only", "pmc_full_text", "open_access_url"]
 
