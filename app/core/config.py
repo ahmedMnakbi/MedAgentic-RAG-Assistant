@@ -38,7 +38,7 @@ class Settings(BaseSettings):
         default_factory=lambda: BASE_DIR / "app" / "storage" / "documents.json"
     )
 
-    max_upload_size_mb: int = 20
+    max_upload_size_mb: int = 100
     retrieval_default_top_k: int = 4
     retrieval_score_threshold: float = 1.35
 

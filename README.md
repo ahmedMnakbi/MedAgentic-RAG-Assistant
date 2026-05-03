@@ -159,7 +159,7 @@ The first PDF upload on a fresh machine can still take longer because the embedd
 - validates:
   - `.pdf` extension
   - content type when present
-  - max file size
+  - max file size, defaulting to 100 MB
   - PDF signature
   - corrupted PDF handling
   - empty-text PDF handling
