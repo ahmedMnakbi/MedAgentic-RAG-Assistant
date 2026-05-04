@@ -608,6 +608,10 @@ function renderKeyValueList(items) {
 function renderPromptEnhanceV2(payload) {
   const shell = document.getElementById("prompt-enhance-v2-result");
   shell.className = "result-shell";
+  const optimizedTask = cleanOptimizedTask(payload);
+  const mostlyUnchanged =
+    normalizeComparableText(optimizedTask) &&
+    normalizeComparableText(optimizedTask) === normalizeComparableText(payload.original_input || "");
   const routeButtons = `
     ${
       payload.inferred_mode === "open_literature"
@@ -627,6 +631,11 @@ function renderPromptEnhanceV2(payload) {
         <span class="mode-badge">${payload.can_send_to_assistant ? "sendable" : "blocked"}</span>
       </div>
       <h3>Improved Prompt</h3>
+      ${
+        mostlyUnchanged
+          ? `<p class="microcopy">This request was already clear; MARA kept the task mostly unchanged and added routing, source, and safety planning.</p>`
+          : ""
+      }
       <div class="prompt-template mono">${escapeHtml(payload.optimized_prompt)}</div>
       <div class="inline-actions">
         <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_prompt)}">Copy prompt</button>
@@ -665,12 +674,30 @@ function renderPromptEnhanceV2(payload) {
       </div>
     </details>
   `;
+  shell.dataset.optimizedTask = optimizedTask;
   shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
   shell.dataset.originalInput = payload.original_input || "";
   shell.dataset.inferredMode = payload.inferred_mode || "auto";
   shell.dataset.openLiteratureQuery = cleanOpenLiteratureQuery(payload);
   shell.dataset.fullTextRequired = String(inferFullTextRequired(payload));
   shell.dataset.outputFormat = payload.output_format || "markdown";
+}
+
+function normalizeComparableText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[.?!]+$/g, "")
+    .toLowerCase();
+}
+
+function cleanOptimizedTask(payload) {
+  const direct = String(payload.optimized_task || "").trim();
+  if (direct) return direct;
+  const optimizedPrompt = String(payload.optimized_prompt || "").trim();
+  const taskMatch = optimizedPrompt.match(/^Task:\s*(.+)$/im);
+  if (taskMatch?.[1]) return taskMatch[1].trim();
+  return optimizedPrompt || String(payload.original_input || "").trim();
 }
 
 function setAssistantModeFromEnhancement(inferredMode) {
@@ -1113,7 +1140,7 @@ function bindStaticInteractions() {
     if (sendButton) {
       const resultShell = document.getElementById("prompt-enhance-v2-result");
       document.getElementById("chat-question").value =
-        resultShell.dataset.originalInput || resultShell.dataset.optimizedPrompt || "";
+        resultShell.dataset.optimizedTask || resultShell.dataset.optimizedPrompt || resultShell.dataset.originalInput || "";
       setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || "auto");
       document.getElementById("chat-question").focus();
     }

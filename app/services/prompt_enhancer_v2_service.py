@@ -89,8 +89,9 @@ class PromptEnhancerV2Service:
             source_scope = "open_literature"
             warnings.append("Full-text requests should use the Open Literature Engine and exclude abstract-only sources from evidence claims.")
 
+        optimized_task = self._optimized_task(safe_raw, inferred_mode=inferred_mode, output_format=request.output_format)
         optimized_prompt = self._optimized_prompt(
-            safe_raw,
+            optimized_task,
             inferred_mode=inferred_mode,
             source_scope=source_scope,
             output_format=request.output_format,
@@ -107,6 +108,7 @@ class PromptEnhancerV2Service:
             inferred_mode=inferred_mode,
             output_format=request.output_format,
             full_text_required=full_text_required,
+            optimized_task=optimized_task,
             optimized_prompt=optimized_prompt,
             rag_query=topic_query if source_scope in {"uploaded_documents", "both"} else None,
             pubmed_query=self._pubmed_query(topic_query) if source_scope in {"pubmed", "both"} else None,
@@ -208,8 +210,38 @@ class PromptEnhancerV2Service:
         return f"Import {target}, validate that it is public/readable/open enough to use, then run the requested educational action."
 
     @staticmethod
+    def _optimized_task(text: str, *, inferred_mode: str, output_format: str) -> str:
+        cleaned = normalize_whitespace(text).strip()
+        lowered = cleaned.lower()
+
+        if inferred_mode in {"document_rag", "rag"} and any(term in lowered for term in ("pdf", "document", "uploaded", "file")):
+            topic = PromptEnhancerV2Service._topic_query(cleaned)
+            if "diabetes" in topic.lower() and any(term in lowered for term in ("exam", "studying", "study", "student")):
+                return "Explain the uploaded diabetes PDF as if preparing for an exam."
+            if output_format in {"quiz_json"} or any(term in lowered for term in ("quiz", "questions", "test me")):
+                return "Create quiz questions from the uploaded document."
+            if any(term in lowered for term in ("summarize", "summary")):
+                return "Summarize the uploaded document."
+            if any(term in lowered for term in ("simplify", "simple", "plain language", "like i'm", "like im")):
+                return "Explain the uploaded document in simple study-friendly language."
+            if topic and topic.lower() != cleaned.lower():
+                return f"Explain {topic} from the uploaded document."
+
+        if inferred_mode == "open_literature":
+            topic = PromptEnhancerV2Service._topic_query(cleaned)
+            if topic and topic.lower() != cleaned.lower():
+                return f"Find and synthesize open-access literature about {topic}."
+
+        if inferred_mode == "open_article":
+            url = URL_PATTERN.search(cleaned)
+            if url:
+                return f"Analyze the open article at {url.group(0)} for educational study use."
+
+        return cleaned
+
+    @staticmethod
     def _optimized_prompt(
-        text: str,
+        optimized_task: str,
         *,
         inferred_mode: str,
         source_scope: str,
@@ -222,7 +254,7 @@ class PromptEnhancerV2Service:
         grounding_line = "Use only retrieved/cited source context; say when evidence is insufficient." if strict_grounding else "Prefer retrieved context and label uncertainty."
         full_text_line = "Require usable full text; do not claim full text was used for abstract-only records." if full_text_required else "Label each source as full text, abstract only, metadata only, or restricted."
         return (
-            f"Task: {text}\n\n"
+            f"Task: {optimized_task}\n\n"
             f"Route: {inferred_mode}\n"
             f"Source scope: {source_scope}\n"
             f"Audience: {audience_line}\n"

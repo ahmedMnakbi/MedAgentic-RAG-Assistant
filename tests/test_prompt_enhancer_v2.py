@@ -22,6 +22,7 @@ def test_prompt_enhance_v2_routes_uploaded_pdf_request(client):
     assert payload["rag_query"]
     assert payload["safety_plan"]
     assert "diabetes" in payload["optimized_prompt"].lower()
+    assert payload["optimized_task"]
 
 
 def test_prompt_enhance_v2_routes_full_text_to_open_literature(client):
@@ -56,6 +57,41 @@ def test_prompt_enhance_v2_open_literature_query_is_handoff_ready(client):
     assert payload["full_text_required"] is True
     assert payload["output_format"] == "evidence_table"
     assert payload["open_literature_query"] == "diabetes mellitus pathophysiology full text review open access"
+
+
+def test_prompt_enhance_v2_messy_document_prompt_has_clean_handoff_task(client):
+    response = client.post(
+        "/api/prompts/enhance-v2",
+        json={
+            "raw_input": "diabetes pdf explain like exam pls",
+            "source_scope": "auto",
+            "strict_grounding": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["original_input"] == "diabetes pdf explain like exam pls"
+    assert payload["optimized_task"] == "Explain the uploaded diabetes PDF as if preparing for an exam."
+    assert payload["inferred_mode"] == "document_rag"
+    assert payload["optimized_task"] in payload["optimized_prompt"]
+    assert "pls" not in payload["optimized_task"].lower()
+
+
+def test_prompt_enhance_v2_clean_general_prompt_keeps_clean_handoff_task(client):
+    response = client.post(
+        "/api/prompts/enhance-v2",
+        json={
+            "raw_input": "Explain diabetes pathophysiology for a medical student.",
+            "source_scope": "auto",
+            "strict_grounding": False,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["inferred_mode"] == "general_education"
+    assert payload["optimized_task"] == "Explain diabetes pathophysiology for a medical student."
 
 
 def test_prompt_enhance_v2_general_education_without_strict_grounding(client):

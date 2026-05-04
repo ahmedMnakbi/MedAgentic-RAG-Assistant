@@ -57,6 +57,7 @@ class PromptEnhanceV2Response(BaseModel):
     inferred_mode: str
     output_format: str = "markdown"
     full_text_required: bool = False
+    optimized_task: str
     optimized_prompt: str
     rag_query: str | None = None
     pubmed_query: str | None = None
