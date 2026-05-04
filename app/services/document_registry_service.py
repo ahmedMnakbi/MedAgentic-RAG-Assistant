@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 from threading import Lock
 
 from app.core.config import Settings
+from app.core.exceptions import ExternalServiceError
 from app.schemas.documents import DocumentRecord
 
 
@@ -36,8 +38,13 @@ class DocumentRegistryService:
     def _read(self) -> dict:
         if not self.settings.documents_registry_file.exists():
             return {"documents": []}
-        raw = self.settings.documents_registry_file.read_text(encoding="utf-8").strip() or '{"documents": []}'
-        return json.loads(raw)
+        raw = self.settings.documents_registry_file.read_text(encoding="utf-8-sig").strip() or '{"documents": []}'
+        try:
+            return json.loads(raw)
+        except JSONDecodeError as exc:
+            raise ExternalServiceError(
+                "Document registry could not be read. Existing PDF files were left unchanged."
+            ) from exc
 
     def _write(self, payload: dict) -> None:
         self.settings.documents_registry_file.write_text(

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from fastapi import APIRouter, File, Request, UploadFile
 
+from app.core.exceptions import AppError, ExternalServiceError
 from app.schemas.documents import (
     DocumentRecord,
     DocumentUploadResponse,
@@ -31,11 +32,18 @@ async def upload_document(
 ) -> DocumentUploadResponse:
     services = _get_services(request)
     content = await file.read()
-    return services.document_service.process_upload(
-        filename=file.filename or "uploaded.pdf",
-        content_type=file.content_type,
-        content=content,
-    )
+    try:
+        return services.document_service.process_upload(
+            filename=file.filename or "uploaded.pdf",
+            content_type=file.content_type,
+            content=content,
+        )
+    except AppError:
+        raise
+    except Exception as exc:
+        raise ExternalServiceError(
+            "Document upload failed before indexing could complete. Existing indexed documents were left unchanged."
+        ) from exc
 
 
 @router.post("/workflow", response_model=DocumentWorkflowResponse)

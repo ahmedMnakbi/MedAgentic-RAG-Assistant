@@ -123,6 +123,35 @@ def test_upload_chunking_failure_is_specific_and_preserves_registry(client, app,
     assert app.state.services.document_service.list_documents() == before
 
 
+def test_upload_with_bom_registry_does_not_return_internal_error(client, app, monkeypatch):
+    registry_path = app.state.settings.documents_registry_file
+    registry_path.write_text('{"documents": []}', encoding="utf-8-sig")
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: None)
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("bom_registry.pdf", _text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "indexed"
+
+
+def test_upload_registry_parse_failure_is_clear_not_internal(client, app):
+    registry_path = app.state.settings.documents_registry_file
+    registry_path.write_text("{not-json", encoding="utf-8")
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("registry_broken.pdf", _text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 502
+    payload = response.json()
+    assert payload["code"] == "external_service_error"
+    assert "registry" in payload["error"].lower()
+
+
 def test_upload_rejects_invalid_extension(client):
     response = client.post(
         "/api/documents/upload",
