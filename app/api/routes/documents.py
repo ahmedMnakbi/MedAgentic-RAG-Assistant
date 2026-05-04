@@ -4,7 +4,12 @@ from types import SimpleNamespace
 
 from fastapi import APIRouter, File, Request, UploadFile
 
-from app.schemas.documents import DocumentRecord, DocumentUploadResponse
+from app.schemas.documents import (
+    DocumentRecord,
+    DocumentUploadResponse,
+    DocumentWorkflowRequest,
+    DocumentWorkflowResponse,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -31,3 +36,12 @@ async def upload_document(
         content_type=file.content_type,
         content=content,
     )
+
+
+@router.post("/workflow", response_model=DocumentWorkflowResponse)
+def run_document_workflow(
+    payload: DocumentWorkflowRequest,
+    request: Request,
+) -> DocumentWorkflowResponse:
+    services = _get_services(request)
+    return services.document_workflow_service.run(payload)

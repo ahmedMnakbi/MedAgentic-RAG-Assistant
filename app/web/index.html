@@ -369,6 +369,163 @@
             </section>
           </div>
         </section>
+
+        <section class="panel stack-panel">
+          <div class="panel-header">
+            <div>
+              <p class="card-kicker">Prompt Enhancer Lab</p>
+              <h2>Context harness</h2>
+            </div>
+          </div>
+
+          <form id="prompt-enhance-v2-form" class="stack-form">
+            <label class="field">
+              <span>Raw prompt</span>
+              <textarea id="prompt-enhance-v2-input" rows="5" placeholder="Example: find real full text articles about sepsis pathophysiology not just abstracts" required></textarea>
+            </label>
+            <div class="compact-grid">
+              <label class="field">
+                <span>Target mode</span>
+                <select id="prompt-enhance-v2-mode">
+                  <option value="auto">auto</option>
+                  <option value="rag">rag</option>
+                  <option value="open_literature">open_literature</option>
+                  <option value="open_article">open_article</option>
+                  <option value="quiz">quiz</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Output</span>
+                <select id="prompt-enhance-v2-output">
+                  <option value="markdown">markdown</option>
+                  <option value="study_notes">study_notes</option>
+                  <option value="evidence_table">evidence_table</option>
+                  <option value="article_digest">article_digest</option>
+                  <option value="quiz_json">quiz_json</option>
+                </select>
+              </label>
+            </div>
+            <div class="compact-grid">
+              <label class="field">
+                <span>Audience</span>
+                <input id="prompt-enhance-v2-audience" type="text" placeholder="medical students" />
+              </label>
+              <label class="field">
+                <span>Source scope</span>
+                <select id="prompt-enhance-v2-scope">
+                  <option value="auto">auto</option>
+                  <option value="uploaded_documents">uploaded_documents</option>
+                  <option value="pubmed">pubmed</option>
+                  <option value="open_literature">open_literature</option>
+                  <option value="open_article">open_article</option>
+                  <option value="none">none</option>
+                </select>
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="switch">
+                <input id="prompt-enhance-v2-grounding" type="checkbox" checked />
+                <span>Strict grounding</span>
+              </label>
+              <label class="switch">
+                <input id="prompt-enhance-v2-fulltext" type="checkbox" />
+                <span>Full text required</span>
+              </label>
+            </div>
+            <button class="primary-button" type="submit">Enhance v2</button>
+          </form>
+
+          <div id="prompt-enhance-v2-result" class="result-shell empty-state">
+            Enhanced prompt package output will appear here.
+          </div>
+        </section>
+
+        <section class="panel stack-panel">
+          <div class="panel-header">
+            <div>
+              <p class="card-kicker">Open Literature</p>
+              <h2>Search broadly</h2>
+            </div>
+          </div>
+
+          <form id="open-literature-form" class="stack-form">
+            <label class="field">
+              <span>Literature question</span>
+              <textarea id="open-literature-query" rows="4" placeholder="Example: full text articles about GLP-1 receptor agonists and cardiovascular outcomes" required></textarea>
+            </label>
+            <div class="compact-grid">
+              <label class="field">
+                <span>Output mode</span>
+                <select id="open-literature-mode">
+                  <option value="quick_answer">Quick Answer</option>
+                  <option value="deep_review">Deep Review</option>
+                  <option value="article_digest">Article Digest</option>
+                  <option value="evidence_table">Evidence Table</option>
+                  <option value="study_notes">Study Notes</option>
+                  <option value="quiz">Quiz</option>
+                  <option value="systematic_search_lite">Systematic Search Lite</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Max results</span>
+                <input id="open-literature-max-results" type="number" min="1" max="20" value="8" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="switch">
+                <input id="open-literature-fulltext" type="checkbox" />
+                <span>Require full text</span>
+              </label>
+            </div>
+            <button class="primary-button" type="submit">Search literature</button>
+          </form>
+
+          <div id="open-literature-result" class="result-shell empty-state">
+            Open Literature results will appear here.
+          </div>
+        </section>
+
+        <section class="panel stack-panel">
+          <div class="panel-header">
+            <div>
+              <p class="card-kicker">Open Article</p>
+              <h2>Import one source</h2>
+            </div>
+          </div>
+
+          <form id="open-article-form" class="stack-form">
+            <label class="field">
+              <span>Article URL</span>
+              <input id="open-article-url" type="url" placeholder="https://pmc.ncbi.nlm.nih.gov/articles/PMC..." required />
+            </label>
+            <div class="compact-grid">
+              <label class="field">
+                <span>Action</span>
+                <select id="open-article-action">
+                  <option value="summarize">summarize</option>
+                  <option value="simplify">simplify</option>
+                  <option value="quiz">quiz</option>
+                  <option value="extract_key_claims">extract_key_claims</option>
+                  <option value="extract_limitations">extract_limitations</option>
+                  <option value="extract_pico">extract_pico</option>
+                  <option value="citation_card">citation_card</option>
+                  <option value="study_notes">study_notes</option>
+                  <option value="exam_questions">exam_questions</option>
+                  <option value="extract_methodology">extract_methodology</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Prompt</span>
+                <input id="open-article-question" type="text" placeholder="Optional focus" />
+              </label>
+            </div>
+            <button class="primary-button" type="submit">Run article action</button>
+          </form>
+
+          <div id="open-article-result" class="result-shell empty-state">
+            Open Article output will appear here.
+          </div>
+        </section>
       </main>
     </div>
 

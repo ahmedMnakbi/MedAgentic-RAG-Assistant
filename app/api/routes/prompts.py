@@ -12,6 +12,7 @@ from app.schemas.prompts import (
     PromptSuggestRequest,
     PromptSuggestResponse,
 )
+from app.schemas.prompt_enhancement import PromptEnhanceV2Request, PromptEnhanceV2Response
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
 
@@ -47,6 +48,12 @@ def improve_prompt(payload: PromptImproveRequest, request: Request) -> PromptImp
         output_type=payload.output_type,
         output_format=payload.output_format,
     )
+
+
+@router.post("/enhance-v2", response_model=PromptEnhanceV2Response)
+def enhance_prompt_v2(payload: PromptEnhanceV2Request, request: Request) -> PromptEnhanceV2Response:
+    services = _get_services(request)
+    return services.prompt_enhancer_v2_service.enhance(payload)
 
 
 @router.post("/suggest", response_model=PromptSuggestResponse)

@@ -44,6 +44,9 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             warnings=["This assistant is educational only and not a clinical decision tool."],
         )
+    base_warnings = []
+    if safety.caution:
+        base_warnings.append(safety.caution)
 
     mode = services.router_service.resolve_mode(payload.mode, payload.question)
     enhanced_prompt = None
@@ -105,8 +108,8 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             enhanced_prompt=enhanced_prompt,
         )
 
-    safe_context = services.rag_service.build_context(retrieved_chunks)
-    if not safe_context:
+    packed_context = services.rag_service.pack_context(retrieved_chunks)
+    if not packed_context.text:
         response = _build_no_source_response(
             payload,
             safety,
@@ -123,6 +126,16 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         answer = services.summarization_service.summarize(
             payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
         )
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                sources=sources,
+                warnings=base_warnings + post_warnings,
+            )
         return AskResponse(
             status="ok",
             mode_used="summarize",
@@ -130,12 +143,23 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             sources=sources,
             enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings + packed_context.warnings + post_warnings,
         )
 
     if mode == "simplify":
         answer = services.simplification_service.simplify(
             payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
         )
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                sources=sources,
+                warnings=base_warnings + post_warnings,
+            )
         return AskResponse(
             status="ok",
             mode_used="simplify",
@@ -143,6 +167,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             sources=sources,
             enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings + packed_context.warnings + post_warnings,
         )
 
     if mode == "quiz":
@@ -157,6 +182,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             sources=sources,
             enhanced_prompt=enhanced_prompt,
             quiz_items=quiz_items,
+            warnings=base_warnings + packed_context.warnings,
         )
 
     answer = services.answer_service.answer(
@@ -164,6 +190,18 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         retrieved_chunks,
         enhanced_prompt=enhanced_prompt,
     )
+    answer, post_warnings, refused = _post_process_answer(services, answer)
+    grounding = services.grounding_service.check(answer, retrieved_chunks)
+    grounding_warnings = [grounding.warning] if grounding.warning else []
+    if refused:
+        return AskResponse(
+            status="refused",
+            mode_used="refuse",
+            answer=answer,
+            safety=safety,
+            sources=sources,
+            warnings=base_warnings + post_warnings,
+        )
     return AskResponse(
         status="ok",
         mode_used="rag",
@@ -171,4 +209,18 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         safety=safety,
         sources=sources,
         enhanced_prompt=enhanced_prompt,
+        warnings=base_warnings + packed_context.warnings + post_warnings + grounding_warnings,
+    )
+
+
+def _post_process_answer(services: SimpleNamespace, answer: str) -> tuple[str, list[str], bool]:
+    if not services.post_safety_service:
+        return answer, [], False
+    ok, findings = services.post_safety_service.check(answer)
+    if ok:
+        return answer, [], False
+    return (
+        services.post_safety_service.safe_replacement(),
+        ["The generated answer was blocked by the post-generation safety checker."],
+        True,
     )

@@ -14,8 +14,15 @@ class GroqClient:
         self.settings = settings
         self.prompt_dir = BASE_DIR / "app" / "prompts"
 
-    def generate_text(self, prompt_name: str, user_prompt: str, *, temperature: float = 0.1) -> str:
-        llm = self._build_llm(temperature=temperature)
+    def generate_text(
+        self,
+        prompt_name: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.1,
+        model_name: str | None = None,
+    ) -> str:
+        llm = self._build_llm(temperature=temperature, model_name=model_name)
         system_prompt = self._load_prompt(prompt_name)
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
@@ -33,12 +40,25 @@ class GroqClient:
             return "\n".join(str(item) for item in content)
         return str(content).strip()
 
-    def generate_json(self, prompt_name: str, user_prompt: str, *, temperature: float = 0.0) -> Any:
-        raw = self.generate_text(prompt_name, user_prompt, temperature=temperature)
+    def generate_json(
+        self,
+        prompt_name: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.0,
+        model_name: str | None = None,
+    ) -> Any:
+        raw = self.generate_text(
+            prompt_name,
+            user_prompt,
+            temperature=temperature,
+            model_name=model_name,
+        )
         return self._extract_json(raw)
 
-    def _build_llm(self, *, temperature: float):
-        if not self.settings.groq_api_key or not self.settings.groq_model:
+    def _build_llm(self, *, temperature: float, model_name: str | None = None):
+        resolved_model = model_name or self.settings.groq_model
+        if not self.settings.groq_api_key or not resolved_model:
             raise NotConfiguredError(
                 "GROQ_API_KEY and GROQ_MODEL must be configured before generation features can be used."
             )
@@ -49,7 +69,7 @@ class GroqClient:
 
         return ChatGroq(
             api_key=self.settings.groq_api_key.get_secret_value(),
-            model_name=self.settings.groq_model,
+            model_name=resolved_model,
             temperature=temperature,
         )
 

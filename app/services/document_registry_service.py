@@ -25,6 +25,14 @@ class DocumentRegistryService:
             documents.append(document.model_dump())
             self._write(payload)
 
+    def find_by_hash(self, document_hash: str) -> DocumentRecord | None:
+        if not document_hash:
+            return None
+        for document in self.list_documents():
+            if document.document_hash == document_hash:
+                return document
+        return None
+
     def _read(self) -> dict:
         if not self.settings.documents_registry_file.exists():
             return {"documents": []}

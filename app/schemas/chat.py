@@ -28,6 +28,9 @@ class SourceRef(BaseModel):
     chunk_id: str
     excerpt: str
     score: float
+    section: str | None = None
+    citation_label: str | None = None
+    source_status: str | None = None
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=4000)

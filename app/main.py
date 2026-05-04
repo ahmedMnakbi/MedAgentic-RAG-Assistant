@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import chat, documents, health, prompts, pubmed, web
+from app.api.routes import chat, documents, health, open_article, open_literature, prompts, pubmed, web
 from app.clients.embeddings_client import EmbeddingsClient
 from app.clients.groq_client import GroqClient
 from app.clients.ncbi_client import NCBIClient
@@ -21,8 +21,25 @@ from app.schemas.common import ErrorResponse
 from app.services.answer_service import AnswerService
 from app.services.document_registry_service import DocumentRegistryService
 from app.services.document_service import DocumentService
+from app.services.document_workflow_service import DocumentWorkflowService
 from app.services.prompt_enhancer_service import PromptEnhancerService
+from app.services.prompt_enhancer_v2_service import PromptEnhancerV2Service
 from app.services.prompt_library_service import PromptLibraryService
+from app.services.grounding_service import GroundingService
+from app.services.langgraph_rag_service import LangGraphRagService
+from app.services.open_article_service import OpenArticleService
+from app.services.open_literature.adapters.core_adapter import COREAdapter
+from app.services.open_literature.adapters.crossref_adapter import CrossrefAdapter
+from app.services.open_literature.adapters.cureus_adapter import CureusAdapter
+from app.services.open_literature.adapters.doaj_adapter import DOAJAdapter
+from app.services.open_literature.adapters.europe_pmc_adapter import EuropePMCAdapter
+from app.services.open_literature.adapters.generic_html_adapter import GenericOAHTMLAdapter
+from app.services.open_literature.adapters.openalex_adapter import OpenAlexAdapter
+from app.services.open_literature.adapters.pubmed_adapter import PMCOAAdapter, PubMedMetadataAdapter
+from app.services.open_literature.adapters.semantic_scholar_adapter import SemanticScholarAdapter
+from app.services.open_literature.adapters.unpaywall_adapter import UnpaywallAdapter
+from app.services.open_literature.search_service import OpenLiteratureSearchService
+from app.services.post_safety_service import PostSafetyService
 from app.services.pubmed_service import PubMedService
 from app.services.quiz_service import QuizService
 from app.services.rag_service import RagService
@@ -39,10 +56,26 @@ def build_services(settings: Settings) -> SimpleNamespace:
     document_registry_service = DocumentRegistryService(settings)
     rag_service = RagService(settings, vectorstore_client)
     prompt_library_service = PromptLibraryService(settings=settings, groq_client=groq_client)
+    safety_service = SafetyService()
+    ncbi_client = NCBIClient(settings)
+    open_article_service = OpenArticleService(
+        settings=settings,
+        ncbi_client=ncbi_client,
+    )
+    generic_html_adapter = GenericOAHTMLAdapter(open_article_service)
+    answer_service = AnswerService(groq_client=groq_client)
+    summarization_service = SummarizationService(groq_client=groq_client)
+    simplification_service = SimplificationService(groq_client=groq_client)
+    quiz_service = QuizService(groq_client=groq_client)
     return SimpleNamespace(
-        safety_service=SafetyService(),
+        safety_service=safety_service,
         router_service=RouterService(),
         prompt_enhancer_service=PromptEnhancerService(),
+        prompt_enhancer_v2_service=PromptEnhancerV2Service(
+            settings=settings,
+            safety_service=safety_service,
+            groq_client=groq_client,
+        ),
         prompt_library_service=prompt_library_service,
         document_service=DocumentService(
             settings=settings,
@@ -51,11 +84,40 @@ def build_services(settings: Settings) -> SimpleNamespace:
             registry_service=document_registry_service,
         ),
         rag_service=rag_service,
-        answer_service=AnswerService(groq_client=groq_client),
-        summarization_service=SummarizationService(groq_client=groq_client),
-        simplification_service=SimplificationService(groq_client=groq_client),
-        quiz_service=QuizService(groq_client=groq_client),
-        pubmed_service=PubMedService(ncbi_client=NCBIClient(settings)),
+        answer_service=answer_service,
+        summarization_service=summarization_service,
+        simplification_service=simplification_service,
+        quiz_service=quiz_service,
+        document_workflow_service=DocumentWorkflowService(
+            rag_service=rag_service,
+            safety_service=safety_service,
+            summarization_service=summarization_service,
+            simplification_service=simplification_service,
+            quiz_service=quiz_service,
+            answer_service=answer_service,
+        ),
+        pubmed_service=PubMedService(ncbi_client=ncbi_client),
+        open_article_service=open_article_service,
+        open_literature_service=OpenLiteratureSearchService(
+            settings=settings,
+            safety_service=safety_service,
+            adapters=[
+                PMCOAAdapter(ncbi_client),
+                PubMedMetadataAdapter(ncbi_client),
+                EuropePMCAdapter(),
+                OpenAlexAdapter(),
+                UnpaywallAdapter(),
+                CrossrefAdapter(),
+                COREAdapter(),
+                SemanticScholarAdapter(),
+                DOAJAdapter(),
+                CureusAdapter(),
+            ],
+            generic_adapter=generic_html_adapter if settings.open_literature_enable_generic_html else None,
+        ),
+        post_safety_service=PostSafetyService(safety_service),
+        grounding_service=GroundingService(),
+        langgraph_rag_service=LangGraphRagService(settings),
     )
 
 
@@ -68,7 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=resolved_settings.app_name,
         description=APP_DESCRIPTION,
         debug=resolved_settings.app_debug,
-        version="1.3.0",
+        version="2.0.0",
     )
     app.state.settings = resolved_settings
     app.state.services = build_services(resolved_settings)
@@ -79,6 +141,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(documents.router, prefix=resolved_settings.api_prefix)
     app.include_router(chat.router, prefix=resolved_settings.api_prefix)
     app.include_router(pubmed.router, prefix=resolved_settings.api_prefix)
+    app.include_router(open_article.router, prefix=resolved_settings.api_prefix)
+    app.include_router(open_literature.router, prefix=resolved_settings.api_prefix)
     app.include_router(prompts.router, prefix=resolved_settings.api_prefix)
 
     @app.exception_handler(AppError)

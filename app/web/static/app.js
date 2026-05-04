@@ -532,6 +532,108 @@ function renderPromptImprovement(payload) {
   `;
 }
 
+function renderKeyValueList(items) {
+  return (items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function renderPromptEnhanceV2(payload) {
+  const shell = document.getElementById("prompt-enhance-v2-result");
+  shell.className = "result-shell";
+  shell.innerHTML = `
+    <article class="result-card">
+      <div class="result-topline">
+        <span class="mode-badge">${escapeHtml(payload.inferred_mode)}</span>
+        <span class="mode-badge">${payload.can_send_to_assistant ? "sendable" : "blocked"}</span>
+      </div>
+      <h3>Improved Prompt</h3>
+      <div class="prompt-template mono">${escapeHtml(payload.optimized_prompt)}</div>
+      <div class="inline-actions">
+        <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_prompt)}">Copy prompt</button>
+        <button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>
+      </div>
+    </article>
+    <article class="result-card">
+      <h3>Retrieval Plan</h3>
+      <ul>${renderKeyValueList(payload.retrieval_plan)}</ul>
+    </article>
+    <article class="result-card">
+      <h3>Context Plan</h3>
+      <ul>${renderKeyValueList(payload.context_plan)}</ul>
+    </article>
+    <article class="result-card">
+      <h3>Harness Checks</h3>
+      <ul>${renderKeyValueList([...(payload.safety_plan || []), ...(payload.quality_checks || [])])}</ul>
+      ${(payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("")}
+    </article>
+    <article class="result-card">
+      <h3>Raw JSON</h3>
+      <div class="prompt-template mono">${escapeHtml(JSON.stringify(payload, null, 2))}</div>
+    </article>
+  `;
+  shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
+}
+
+function renderOpenLiterature(payload) {
+  const shell = document.getElementById("open-literature-result");
+  const warnings = (payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("");
+  const evidence = (payload.evidence_table || [])
+    .map(
+      (row) => `
+        <article class="source-card">
+          <strong>${escapeHtml(row.article)}</strong>
+          <p>${escapeHtml(row.main_finding)}</p>
+          <div class="meta-line">
+            <span>${escapeHtml(row.source_status)}</span>
+            <span>${escapeHtml(row.citation)}</span>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+  shell.className = "result-shell";
+  shell.innerHTML = `
+    <article class="result-card">
+      <div class="result-topline">
+        <span class="status-badge ${escapeHtml(payload.status)}">${escapeHtml(payload.status)}</span>
+        <span class="mode-badge">Candidates ${payload.candidate_count || 0}</span>
+        <span class="mode-badge">Full text ${payload.full_text_count || 0}</span>
+        <span class="mode-badge">Abstract ${payload.abstract_only_count || 0}</span>
+        <span class="mode-badge">Restricted ${payload.restricted_count || 0}</span>
+      </div>
+      <div class="answer-body">${escapeHtml(payload.answer || "")}</div>
+      ${warnings ? `<div class="result-topline">${warnings}</div>` : ""}
+    </article>
+    <article class="result-card">
+      <h3>Search Details</h3>
+      <p class="microcopy">Sources: ${(payload.sources_searched || []).map(escapeHtml).join(", ")}</p>
+      <p class="microcopy">Variants: ${(payload.query_variants || []).map(escapeHtml).join(" | ")}</p>
+    </article>
+    ${evidence ? `<article class="result-card"><h3>Evidence Table</h3><div class="document-list">${evidence}</div></article>` : ""}
+  `;
+}
+
+function renderOpenArticle(payload) {
+  const shell = document.getElementById("open-article-result");
+  const article = payload.article || {};
+  const warnings = (payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("");
+  const quizItems = renderQuizItems(payload.quiz_items || []);
+  shell.className = "result-shell";
+  shell.innerHTML = `
+    <article class="result-card">
+      <div class="result-topline">
+        <span class="status-badge ${escapeHtml(payload.status)}">${escapeHtml(payload.status)}</span>
+        <span class="mode-badge">${escapeHtml(payload.action || "import")}</span>
+        <span class="mode-badge">${escapeHtml(article.full_text_status || "unknown")}</span>
+        <span class="mode-badge">Quality ${escapeHtml(article.extraction_quality_score ?? "n/a")}</span>
+      </div>
+      <strong>${escapeHtml(article.title || "Open article")}</strong>
+      <div class="answer-body">${escapeHtml(payload.answer || "")}</div>
+      ${warnings ? `<div class="result-topline">${warnings}</div>` : ""}
+    </article>
+    ${quizItems ? `<article class="result-card"><h3>Quiz items</h3><div class="document-list">${quizItems}</div></article>` : ""}
+  `;
+}
+
 function getPromptSuggestionById(suggestionId) {
   return (state.promptSuggestions || []).find((item) => item.id === suggestionId) || null;
 }
@@ -841,6 +943,95 @@ function bindStaticInteractions() {
       renderPromptImprovement(payload);
     } catch (error) {
       shell.className = "prompt-improve-result empty-state";
+      shell.textContent = error.message;
+    }
+  });
+
+  document.getElementById("prompt-enhance-v2-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shell = document.getElementById("prompt-enhance-v2-result");
+    shell.className = "result-shell empty-state";
+    shell.textContent = "Building prompt package...";
+    try {
+      const payload = await api("/api/prompts/enhance-v2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          raw_input: document.getElementById("prompt-enhance-v2-input").value.trim(),
+          target_mode: document.getElementById("prompt-enhance-v2-mode").value,
+          audience: document.getElementById("prompt-enhance-v2-audience").value.trim() || null,
+          source_scope: document.getElementById("prompt-enhance-v2-scope").value,
+          output_format: document.getElementById("prompt-enhance-v2-output").value,
+          strict_grounding: document.getElementById("prompt-enhance-v2-grounding").checked,
+          include_retrieval_plan: true,
+          include_safety_checks: true,
+          full_text_required: document.getElementById("prompt-enhance-v2-fulltext").checked,
+        }),
+      });
+      renderPromptEnhanceV2(payload);
+    } catch (error) {
+      shell.className = "result-shell empty-state";
+      shell.textContent = error.message;
+    }
+  });
+
+  document.getElementById("prompt-enhance-v2-result").addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("[data-copy-text]");
+    if (copyButton) {
+      await navigator.clipboard?.writeText(copyButton.dataset.copyText || "");
+      return;
+    }
+    const sendButton = event.target.closest("[data-enhanced-to-chat]");
+    if (sendButton) {
+      document.getElementById("chat-question").value = document.getElementById("prompt-enhance-v2-result").dataset.optimizedPrompt || "";
+      document.getElementById("chat-question").focus();
+    }
+  });
+
+  document.getElementById("open-literature-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shell = document.getElementById("open-literature-result");
+    shell.className = "result-shell empty-state";
+    shell.textContent = "Searching open literature...";
+    try {
+      const payload = await api("/api/open-literature/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: document.getElementById("open-literature-query").value.trim(),
+          output_mode: document.getElementById("open-literature-mode").value,
+          filters: {
+            max_results: Number(document.getElementById("open-literature-max-results").value),
+            full_text_required: document.getElementById("open-literature-fulltext").checked,
+            open_access_only: true,
+          },
+        }),
+      });
+      renderOpenLiterature(payload);
+    } catch (error) {
+      shell.className = "result-shell empty-state";
+      shell.textContent = error.message;
+    }
+  });
+
+  document.getElementById("open-article-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shell = document.getElementById("open-article-result");
+    shell.className = "result-shell empty-state";
+    shell.textContent = "Importing article and running action...";
+    try {
+      const payload = await api("/api/open-article/transform", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: document.getElementById("open-article-url").value.trim(),
+          action: document.getElementById("open-article-action").value,
+          question: document.getElementById("open-article-question").value.trim() || null,
+        }),
+      });
+      renderOpenArticle(payload);
+    } catch (error) {
+      shell.className = "result-shell empty-state";
       shell.textContent = error.message;
     }
   });

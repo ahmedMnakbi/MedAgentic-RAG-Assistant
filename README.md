@@ -2,7 +2,7 @@
 
 MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, search PubMed, compare selected studies, and refine prompts through a simpler Prompt Studio.
 
-`v1.3` adds multi-study PubMed comparison and synthesis, a lighter Prompt Studio, a more interactive web UI, and MARA branding while keeping Swagger at `/docs` for developer testing.
+`v2.0` adds a Generative AI upgrade layer: Prompt Enhancer v2 / Context-Harness Lab, refined medical safety levels, RAG v2 retrieval infrastructure, safer Open Article import, and an adapter-based Open Literature Engine while keeping Swagger at `/docs` for developer testing.
 
 ## Safety Boundary
 
@@ -14,7 +14,7 @@ MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medi
   - personalized treatment recommendations
 - It is built for learning, demonstrations, and portfolio use.
 
-## What v1.3 Includes
+## What MARA Includes
 
 - FastAPI backend with Swagger docs
 - interactive web UI at `/`
@@ -26,8 +26,13 @@ MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medi
 - `GET /api/prompts/{prompt_id}`
 - `POST /api/prompts/suggest`
 - `POST /api/prompts/improve`
+- `POST /api/prompts/enhance-v2`
 - `POST /api/pubmed/transform`
 - `POST /api/pubmed/import-url`
+- `POST /api/open-literature/search`
+- `POST /api/open-literature/transform`
+- `POST /api/open-article/import`
+- `POST /api/open-article/transform`
 - PDF validation, parsing, chunking, embeddings, and Chroma persistence
 - rule-based routing for `rag`, `summarize`, `simplify`, `quiz`, `pubmed`, and `prompt_enhance`
 - safety-first refusal logic
@@ -38,12 +43,26 @@ MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medi
 - experimental import of readable open-access article URLs
 - internal prompt library and a lighter Prompt Studio inspired by Prompt Finder & Enhancer / prompts.chat
 
-## What v1.3 Still Does Not Include
+## What v2.0 Adds
+
+- structured MARA prompt packages with route, retrieval plan, context plan, safety plan, quality checks, and copyable optimized prompts
+- three-level educational medical safety policy with post-generation checking
+- configurable RAG strategies: `similarity`, `mmr`, `hybrid`, and `hybrid_rerank`
+- duplicate PDF upload detection by SHA-256 hash
+- source-aware citation metadata with filename, page, section, and chunk labels where available
+- whole-document workflows at `POST /api/documents/workflow`
+- reusable Open Article pipeline with extraction status, full-text status, metadata, quality score, and warnings
+- Open Literature Engine with source adapters for PubMed/PMC, Europe PMC, OpenAlex, Unpaywall, Crossref, CORE, Semantic Scholar, DOAJ, Cureus policy handling, and generic HTML fallback
+- lightweight eval cases and dry-run harness at `scripts/evaluate_rag.py`
+
+The default runtime still works as a portfolio/demo project. Heavy rerankers, LangGraph orchestration, OCR, and stronger embedding models remain optional/configured paths, not mandatory local dependencies.
+
+## What v2.0 Still Does Not Include
 
 - authentication
 - deployment
-- OCR for scanned PDFs
-- LangGraph orchestration
+- mandatory OCR for scanned PDFs
+- mandatory LangGraph orchestration
 - multi-user accounts
 - live prompts.chat or MCP dependency
 - guaranteed full text for every PubMed article
@@ -219,6 +238,13 @@ Example:
 }
 ```
 
+### `POST /api/prompts/enhance-v2`
+
+- builds a structured MARA execution package from messy input
+- returns optimized prompt, inferred mode, retrieval query, context plan, retrieval plan, output contract, safety plan, quality checks, warnings, and sendability
+- deterministic fallback works without API keys
+- unsafe clinical prompts are transformed into safe educational prompts or blocked when needed
+
 ### `POST /api/pubmed/transform`
 
 - takes one or more selected PubMed PMIDs
@@ -248,6 +274,23 @@ Example:
 - supports the same actions as selected PubMed articles
 - blocks localhost/private-network URLs
 - may fail on sites that require login, heavy JavaScript, or anti-bot protection
+
+### `POST /api/open-article/import`
+
+- imports one public article URL through the reusable Open Article pipeline
+- reports title/source metadata, full-text status, quality score, warnings, and whether the source is allowed for AI processing
+- treats Cureus as link-only/restricted by default unless explicitly enabled
+
+### `POST /api/open-article/transform`
+
+- runs educational article actions such as summarize, simplify, quiz, key claims, limitations, PICO, citation card, study notes, exam questions, and methodology extraction
+- keeps the same medical safety boundary and post-generation safety check
+
+### `POST /api/open-literature/search`
+
+- searches trusted biomedical/open-access sources broadly and ingests narrowly
+- reports query variants, sources searched, candidate counts, full-text/abstract/metadata/restricted counts, selected sources, warnings, and evidence table rows
+- labels source status explicitly and never claims full text was used when only abstract or metadata was available
 
 ## Web UI Overview
 
@@ -323,9 +366,9 @@ Run the automated suite:
 pytest
 ```
 
-Current local baseline for `v1.3`:
+Current local baseline for `v2.0`:
 
-- `53` tests passing
+- `78` tests passing
 
 ## Current Limitations
 
@@ -337,7 +380,7 @@ Current local baseline for `v1.3`:
 - no authentication or multi-user support
 - no deployment pipeline yet
 
-## Good Next Steps After v1.3
+## Good Next Steps After v2.0
 
 - add true side-by-side comparison tables and evidence-agreement views for selected studies
 - add post-generation safety checking

@@ -32,4 +32,9 @@ class AnswerService:
             f"Enhanced execution prompt (preserve intent):\n{enhanced_prompt or 'Not provided.'}\n\n"
             "Answer only from the retrieved document context. If the context is incomplete, say so clearly."
         )
-        return self.groq_client.generate_text("rag_answer.txt", user_prompt)
+        settings = getattr(self.groq_client, "settings", None)
+        return self.groq_client.generate_text(
+            "rag_answer.txt",
+            user_prompt,
+            model_name=getattr(settings, "groq_model_answer", None),
+        )

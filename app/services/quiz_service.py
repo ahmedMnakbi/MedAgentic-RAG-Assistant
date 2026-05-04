@@ -27,6 +27,7 @@ class QuizService:
         enhanced_prompt: str | None = None,
         context_label: str = "Retrieved document context",
     ) -> list[QuizItem]:
+        settings = getattr(self.groq_client, "settings", None)
         payload = self.groq_client.generate_json(
             "quiz.txt",
             (
@@ -34,6 +35,7 @@ class QuizService:
                 f"{context_label}:\n{context}\n\n"
                 f"Enhanced execution prompt (preserve intent):\n{enhanced_prompt or 'Not provided.'}"
             ),
+            model_name=getattr(settings, "groq_model_answer", None),
         )
         if not isinstance(payload, list):
             return []

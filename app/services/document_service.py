@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,11 @@ class DocumentService:
             max_bytes=self.settings.max_upload_size_bytes,
         )
 
+        document_hash = hashlib.sha256(content).hexdigest()
+        existing = self.registry_service.find_by_hash(document_hash)
+        if existing:
+            return DocumentUploadResponse(**existing.model_dump(), status="duplicate")
+
         document_id = generate_document_id()
         target_path = self.settings.upload_dir / f"{document_id}.pdf"
         target_path.write_bytes(content)
@@ -57,7 +63,12 @@ class DocumentService:
             raise InvalidPdfError() from exc
 
         total_pages = len(pages)
-        prepared_pages = self._prepare_pages(pages, document_id=document_id, filename=filename)
+        prepared_pages = self._prepare_pages(
+            pages,
+            document_id=document_id,
+            filename=filename,
+            document_hash=document_hash,
+        )
         if not prepared_pages:
             target_path.unlink(missing_ok=True)
             raise EmptyPdfError()
@@ -76,6 +87,7 @@ class DocumentService:
             page_count=total_pages,
             chunk_count=len(chunked_documents),
             uploaded_at=uploaded_at,
+            document_hash=document_hash,
         )
         try:
             self.registry_service.save_document(record)
@@ -84,7 +96,14 @@ class DocumentService:
             raise ExternalServiceError("Document metadata could not be written to the registry.") from exc
         return DocumentUploadResponse(**record.model_dump(), status="indexed")
 
-    def _prepare_pages(self, pages: list[Any], *, document_id: str, filename: str) -> list[Any]:
+    def _prepare_pages(
+        self,
+        pages: list[Any],
+        *,
+        document_id: str,
+        filename: str,
+        document_hash: str,
+    ) -> list[Any]:
         prepared = []
         for index, page in enumerate(pages):
             text = normalize_whitespace(getattr(page, "page_content", ""))
@@ -93,18 +112,25 @@ class DocumentService:
             metadata = dict(getattr(page, "metadata", {}) or {})
             metadata["document_id"] = document_id
             metadata["filename"] = filename
+            metadata["document_hash"] = document_hash
             metadata["page"] = metadata.get("page", index)
+            metadata["section"] = self._infer_section(text)
             prepared.append(self._copy_langchain_document(page, text=text, metadata=metadata))
         return prepared
 
     def _chunk_pages(self, prepared_pages: list[Any]) -> list[Any]:
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.settings.chunk_size,
+            chunk_overlap=self.settings.chunk_overlap,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
         chunked_documents = splitter.split_documents(prepared_pages)
         for index, document in enumerate(chunked_documents):
             metadata = dict(document.metadata)
             metadata["chunk_id"] = f"{metadata['document_id']}_chunk_{index + 1}"
+            metadata.setdefault("section", self._infer_section(document.page_content))
             document.metadata = metadata
         return chunked_documents
 
@@ -113,3 +139,14 @@ class DocumentService:
         from langchain_core.documents import Document
 
         return Document(page_content=text, metadata=metadata)
+
+    @staticmethod
+    def _infer_section(text: str) -> str | None:
+        for raw_line in text.splitlines():
+            line = normalize_whitespace(raw_line)
+            if not line:
+                continue
+            if len(line) <= 90 and (line.istitle() or line.isupper() or line.endswith(":")):
+                return line.rstrip(":")
+            return None
+        return None
