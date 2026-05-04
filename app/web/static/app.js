@@ -1,6 +1,7 @@
 const state = {
   documents: [],
   latestPubmedPayload: null,
+  latestPromptEnhanceV2: null,
   promptCategory: "",
   promptSuggestions: [],
   selectedPromptId: null,
@@ -608,6 +609,7 @@ function renderKeyValueList(items) {
 function renderPromptEnhanceV2(payload) {
   const shell = document.getElementById("prompt-enhance-v2-result");
   shell.className = "result-shell";
+  state.latestPromptEnhanceV2 = payload;
   const optimizedTask = cleanOptimizedTask(payload);
   const mostlyUnchanged =
     normalizeComparableText(optimizedTask) &&
@@ -692,12 +694,34 @@ function normalizeComparableText(value) {
 }
 
 function cleanOptimizedTask(payload) {
-  const direct = String(payload.optimized_task || "").trim();
+  const direct = cleanTaskText(payload.optimized_task || "");
   if (direct) return direct;
   const optimizedPrompt = String(payload.optimized_prompt || "").trim();
   const taskMatch = optimizedPrompt.match(/^Task:\s*(.+)$/im);
-  if (taskMatch?.[1]) return taskMatch[1].trim();
-  return optimizedPrompt || String(payload.original_input || "").trim();
+  if (taskMatch?.[1]) return cleanTaskText(taskMatch[1]);
+  return cleanTaskText(optimizedPrompt) || String(payload.original_input || "").trim();
+}
+
+function cleanTaskText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(/\s+(?:Audience|Route|Source scope|Output format|Instructions|Use only|Cite each|Do not|If evidence)\s*:/i)[0]
+    .split(/\s+(?:Use only retrieved|Use retrieved|Cite each source|Do not diagnose|If evidence is lacking)\b/i)[0]
+    .trim();
+}
+
+function promptEnhancementHandoffTask(payload, resultShell) {
+  const fromPayload = cleanOptimizedTask(payload || {});
+  if (fromPayload) return fromPayload;
+  const fromDataset = String(resultShell?.dataset?.optimizedTask || "").trim();
+  if (fromDataset) return fromDataset;
+  const optimizedPrompt = String(resultShell?.dataset?.optimizedPrompt || "").trim();
+  const taskMatch = optimizedPrompt.match(/^Task:\s*(.+)$/im);
+  if (taskMatch?.[1]) return cleanTaskText(taskMatch[1]);
+  const originalInput = String(resultShell?.dataset?.originalInput || "").trim();
+  if (originalInput) return originalInput;
+  return document.getElementById("prompt-enhance-v2-input").value.trim();
 }
 
 function setAssistantModeFromEnhancement(inferredMode) {
@@ -1140,7 +1164,7 @@ function bindStaticInteractions() {
     if (sendButton) {
       const resultShell = document.getElementById("prompt-enhance-v2-result");
       document.getElementById("chat-question").value =
-        resultShell.dataset.optimizedTask || resultShell.dataset.optimizedPrompt || resultShell.dataset.originalInput || "";
+        promptEnhancementHandoffTask(state.latestPromptEnhanceV2, resultShell);
       setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || "auto");
       document.getElementById("chat-question").focus();
     }

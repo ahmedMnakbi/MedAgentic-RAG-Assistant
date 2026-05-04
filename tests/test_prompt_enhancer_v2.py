@@ -227,3 +227,35 @@ def test_prompt_enhance_v2_llm_override_cannot_force_open_literature_for_plain_t
 
     assert result.original_input == "Explain diabetes pathophysiology for a medical student."
     assert result.inferred_mode == "general_education"
+
+
+def test_prompt_enhance_v2_llm_task_line_updates_optimized_task(settings):
+    class BetterTaskGroq:
+        def generate_json(self, *args, **kwargs):
+            return {
+                "inferred_mode": "document_rag",
+                "optimized_prompt": (
+                    "Task: Provide an exam-style summary of the uploaded diabetes PDF. "
+                    "Audience: medical students. Use only retrieved source material; cite each source.\n\n"
+                    "Route: document_rag\n"
+                    "Source scope: uploaded_documents"
+                ),
+            }
+
+    live_settings = settings.model_copy(update={"app_env": "development", "groq_api_key": SecretStr("test")})
+    service = PromptEnhancerV2Service(
+        settings=live_settings,
+        safety_service=SafetyService(),
+        groq_client=BetterTaskGroq(),
+    )
+
+    result = service.enhance(
+        PromptEnhanceV2Request(
+            raw_input="diabetes pdf explain like exam pls",
+            strict_grounding=True,
+        )
+    )
+
+    assert result.original_input == "diabetes pdf explain like exam pls"
+    assert result.inferred_mode == "document_rag"
+    assert result.optimized_task == "Provide an exam-style summary of the uploaded diabetes PDF."

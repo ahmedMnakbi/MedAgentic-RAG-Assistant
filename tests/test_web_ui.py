@@ -9,6 +9,7 @@ def test_root_serves_web_interface(client):
     assert response.status_code == 200
     assert "MARA" in response.text
     assert "MARA Prompt Builder" in response.text
+    assert "/static/app.js?v=" in response.text
     assert "Turn a rough medical-learning request into a safe, grounded execution plan." in response.text
     assert "Medical Agent RAG Assistant" in response.text
     assert "Open Swagger" in response.text
@@ -24,10 +25,17 @@ def test_root_serves_web_interface(client):
 def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_package():
     script = Path("app/web/static/app.js").read_text(encoding="utf-8")
 
+    assert "latestPromptEnhanceV2: null" in script
+    assert "state.latestPromptEnhanceV2 = payload;" in script
     assert "shell.dataset.optimizedTask = optimizedTask;" in script
     assert "shell.dataset.originalInput = payload.original_input || \"\";" in script
     assert "setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || \"auto\");" in script
-    assert "resultShell.dataset.optimizedTask || resultShell.dataset.optimizedPrompt || resultShell.dataset.originalInput || \"\"" in script
+    assert "promptEnhancementHandoffTask(state.latestPromptEnhanceV2, resultShell)" in script
+    assert "function promptEnhancementHandoffTask(payload, resultShell)" in script
+    assert "const fromPayload = cleanOptimizedTask(payload || {});" in script
+    assert "function cleanTaskText(value)" in script
+    assert "Audience|Route|Source scope|Output format|Instructions" in script
+    assert "return document.getElementById(\"prompt-enhance-v2-input\").value.trim();" in script
     assert "const taskMatch = optimizedPrompt.match(/^Task:\\s*(.+)$/im);" in script
     assert "open_article: \"auto\"" in script
     assert "data-enhanced-to-open-literature" in script

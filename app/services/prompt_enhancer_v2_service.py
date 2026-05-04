@@ -46,7 +46,12 @@ class PromptEnhancerV2Service:
                 temperature=0.0,
                 model_name=self.settings.groq_model_prompt_enhancer,
             )
-            candidate = PromptEnhanceV2Response.model_validate({**fallback.model_dump(), **payload})
+            candidate_payload = {**fallback.model_dump(), **payload}
+            if "optimized_task" not in payload and payload.get("optimized_prompt"):
+                candidate_payload["optimized_task"] = self._extract_task_from_optimized_prompt(
+                    str(payload["optimized_prompt"])
+                )
+            candidate = PromptEnhanceV2Response.model_validate(candidate_payload)
             candidate.original_input = fallback.original_input
             return self._enforce_route_constraints(request, candidate, fallback)
         except Exception:
@@ -266,6 +271,30 @@ class PromptEnhancerV2Service:
             "- Do not diagnose, dose, triage, or recommend personalized treatment.\n"
             "- Include citations or source labels whenever source context is available."
         )
+
+    @staticmethod
+    def _extract_task_from_optimized_prompt(optimized_prompt: str) -> str:
+        match = re.search(r"^Task:\s*(.+)$", optimized_prompt, flags=re.IGNORECASE | re.MULTILINE)
+        if match and match.group(1).strip():
+            return PromptEnhancerV2Service._clean_optimized_task_text(match.group(1))
+        return PromptEnhancerV2Service._clean_optimized_task_text(optimized_prompt)
+
+    @staticmethod
+    def _clean_optimized_task_text(task_text: str) -> str:
+        cleaned = normalize_whitespace(task_text)
+        cleaned = re.split(
+            r"\s+(?:Audience|Route|Source scope|Output format|Instructions|Use only|Cite each|Do not|If evidence)\s*:",
+            cleaned,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        cleaned = re.split(
+            r"\s+(?:Use only retrieved|Use retrieved|Cite each source|Do not diagnose|If evidence is lacking)\b",
+            cleaned,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        return normalize_whitespace(cleaned)
 
     @staticmethod
     def _context_plan(source_scope: str, full_text_required: bool) -> list[str]:
