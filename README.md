@@ -1,6 +1,6 @@
 # MARA
 
-MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, search PubMed, compare selected studies, and refine prompts through a simpler Prompt Studio.
+MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medical education and document understanding only**. It lets you upload medical PDFs, retrieve grounded answers from them, summarize or simplify the material, generate study quizzes, search PubMed/open literature, compare selected studies, import open articles, and build safe prompt plans through MARA Prompt Builder.
 
 `v2.0` adds a Generative AI upgrade layer: Prompt Enhancer v2 / Context-Harness Lab, refined medical safety levels, RAG v2 retrieval infrastructure, safer Open Article import, and an adapter-based Open Literature Engine while keeping Swagger at `/docs` for developer testing.
 
@@ -41,7 +41,7 @@ MARA, short for **Medical Agent RAG Assistant**, is a FastAPI project for **medi
 - multi-study PubMed comparison and merged synthesis
 - PMC full-text fallback when a selected PubMed result has a PMCID
 - experimental import of readable open-access article URLs
-- internal prompt library and a lighter Prompt Studio inspired by Prompt Finder & Enhancer / prompts.chat
+- internal prompt endpoints kept for compatibility, plus the visible MARA Prompt Builder for structured execution plans
 
 ## What v2.0 Adds
 
@@ -74,6 +74,58 @@ The default runtime still works as a portfolio/demo project. Heavy rerankers, La
 - Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 
+## Quickstart
+
+### Windows
+
+1. Clone the repo:
+
+```powershell
+git clone https://github.com/ahmedMnakbi/MedAgentic-RAG-Assistant.git
+cd MedAgentic-RAG-Assistant
+```
+
+2. Run the local launcher:
+
+```powershell
+python start_local.py
+```
+
+If Windows opens the Microsoft Store when you type `python`, use the Python launcher instead:
+
+```powershell
+py start_local.py
+```
+
+You can also disable the Windows App Execution Alias for `python.exe` in Windows Settings.
+
+3. Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+
+### macOS/Linux
+
+1. Clone the repo:
+
+```bash
+git clone https://github.com/ahmedMnakbi/MedAgentic-RAG-Assistant.git
+cd MedAgentic-RAG-Assistant
+```
+
+2. Run the local launcher:
+
+```bash
+python3 start_local.py
+```
+
+3. Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+
+The launcher creates `.venv`, installs `requirements.txt`, copies `.env.example` to `.env` when needed, creates local storage folders, and starts FastAPI at `127.0.0.1:8000`.
+
+Useful URLs:
+
+- App: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+
 ## High-Level Architecture
 
 ```mermaid
@@ -83,14 +135,14 @@ flowchart TD
     C --> D["Rule-Based Router"]
     D --> E["Document RAG Path"]
     D --> F["PubMed Search + Article Actions"]
-    D --> G["Prompt Studio Path"]
+    D --> G["MARA Prompt Builder Path"]
     E --> H["PDF Parsing + Chunking"]
     H --> I["Embeddings"]
     I --> J["ChromaDB"]
     J --> K["Retrieved Chunks"]
     K --> L["Groq LLM Response"]
     F --> M["NCBI E-utilities + PMC Full Text"]
-    G --> N["Prompt Library + Prompt Improver"]
+    G --> N["Prompt Enhancer v2 + Compatibility Prompt Endpoints"]
 ```
 
 ## External Services You Need
@@ -101,60 +153,41 @@ flowchart TD
   - required for literature metadata search
 - NCBI E-utilities docs: [https://www.ncbi.nlm.nih.gov/books/NBK25497/](https://www.ncbi.nlm.nih.gov/books/NBK25497/)
 
-## Environment Setup
+## Manual Setup
 
-1. Clone the repository:
-
-```bash
-git clone https://github.com/ahmedMnakbi/MedAgentic-RAG-Assistant.git
-cd MedAgentic-RAG-Assistant
-```
-
-2. Create a virtual environment:
+Use this fallback if you do not want to use `start_local.py`.
 
 ```bash
 python -m venv .venv
-```
-
-3. Activate it on Windows PowerShell:
-
-```bash
-.\.venv\Scripts\Activate.ps1
-```
-
-4. Install dependencies:
-
-```bash
+# activate venv
 pip install -r requirements.txt
-```
-
-5. Create a local env file:
-
-```bash
-Copy-Item .env.example .env
-```
-
-6. Open `.env` and set:
-
-- `GROQ_API_KEY`
-- `GROQ_MODEL`
-- `NCBI_EMAIL`
-- optionally `NCBI_API_KEY`
-
-Recommended runtime: Python `3.12`.
-
-## Run The App
-
-```bash
+cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Then open:
+On Windows PowerShell, activation is:
 
-- web app: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
-- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Open `.env` and set these when you want live generation/literature features:
+
+- `GROQ_API_KEY`
+- `NCBI_EMAIL`
+- optionally `NCBI_API_KEY`
+
+Recommended runtime: Python `3.12`. Minimum supported runtime for the launcher is Python `3.11`.
 
 The first PDF upload on a fresh machine can still take longer because the embedding model may download once.
+
+## Troubleshooting
+
+- **Port 8000 already in use:** stop the other process using port 8000, or run manual `uvicorn app.main:app --reload --port 8001`.
+- **`python` opens the Microsoft Store on Windows:** run `py start_local.py`, install Python from [python.org](https://www.python.org/downloads/), or disable the Windows App Execution Alias for `python.exe`.
+- **Missing API key:** the app still starts without `GROQ_API_KEY`; generation features return a clear configuration error when used. Add your key to `.env` for live LLM answers.
+- **PDF upload uses text fallback:** if Chroma/vector indexing fails, MARA can still save readable PDFs as `indexed_text_only` and use direct PDF text fallback for selected-document workflows.
+- **Chroma/vectorstore issues:** remove or move local `vectorstore/` only if you intentionally want to rebuild embeddings. Do not delete it if you need existing indexed vectors.
 
 ## Main Endpoints
 
@@ -306,28 +339,15 @@ The class-demo interface at `/` has three areas:
   - toggle prompt enhancement
   - select PubMed results for summary, comparison, simplification, or quizzes
   - try experimental open-access URL import
-- `Prompt Studio`
-  - search built-in prompt recipes
-  - inspect variables without reading a wall of template text
-  - improve prompts with a lighter flow
+- `MARA Prompt Builder`
+  - turn rough medical-learning requests into route/source/retrieval/context/safety plans
+  - send clean tasks to Assistant Lab, Open Literature, or Open Article
 
 Swagger remains available for low-level API testing.
 
-## Prompt Studio Design
+## MARA Prompt Builder Design
 
-The prompt features are inspired by Prompt Finder & Enhancer / prompts.chat, but implemented locally for this project.
-
-Current support:
-
-- prompt suggestion
-- prompt search
-- prompt detail lookup
-- prompt improvement
-
-Current limitation:
-
-- no live prompts.chat dependency
-- no remote prompt marketplace sync
+The visible prompt feature builds structured MARA execution packages. It preserves the user's intent, chooses a route, plans retrieval/context, adds safety and quality checks, and avoids adding medical facts before retrieval. Legacy prompt endpoints remain available for API compatibility.
 
 ## Suggested Demo Flow
 
@@ -340,7 +360,7 @@ Current limitation:
 7. Use a PubMed question to show literature metadata.
 8. Select multiple PubMed studies and run `compare` or `summarize`.
 9. Optionally demonstrate the open-access article URL import.
-10. Open `Prompt Studio` and improve a rough prompt live.
+10. Open `MARA Prompt Builder` and build a safe route/source plan from a rough request.
 
 ## Project Structure
 
@@ -356,6 +376,7 @@ app/
   storage/                 # local runtime storage
   utils/                   # helper utilities
 tests/                     # automated tests
+start_local.py             # cross-platform local launcher
 ```
 
 ## Testing
@@ -366,9 +387,7 @@ Run the automated suite:
 pytest
 ```
 
-Current local baseline for `v2.0`:
-
-- `78` tests passing
+Current local baseline for `v2.0` is tracked by the automated test suite.
 
 ## Current Limitations
 
