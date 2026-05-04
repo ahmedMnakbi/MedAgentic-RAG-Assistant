@@ -67,6 +67,69 @@ class FakeAbstractAdapter(ArticleSourceAdapter):
         ]
 
 
+class FakeDiabetesMixedAdapter(ArticleSourceAdapter):
+    name = "fake_diabetes"
+    priority = 1
+
+    def search(self, query, filters):
+        return [
+            ArticleCandidate(
+                title="Diabetes mellitus pathophysiology review",
+                doi="10.1/diabetes-review",
+                abstract="Review of insulin deficiency, insulin resistance, beta cell dysfunction, and pathogenesis.",
+                source=self.name,
+                landing_page_url="https://example.org/diabetes-review",
+                full_text_url="https://example.org/diabetes-review",
+                is_open_access=True,
+                confidence_score=0.7,
+            ),
+            ArticleCandidate(
+                title="Diabetes and COVID-19 outcomes",
+                doi="10.1/covid",
+                abstract="Comorbidity outcomes in COVID-19 patients with diabetes.",
+                source=self.name,
+                landing_page_url="https://example.org/covid",
+                full_text_url="https://example.org/covid",
+                is_open_access=True,
+                confidence_score=0.95,
+            ),
+            ArticleCandidate(
+                title="Life expectancy in diabetes cohorts",
+                doi="10.1/life",
+                abstract="Epidemiology and life expectancy in diabetes.",
+                source=self.name,
+                landing_page_url="https://example.org/life",
+                full_text_url="https://example.org/life",
+                is_open_access=True,
+                confidence_score=0.95,
+            ),
+        ]
+
+    def resolve(self, candidate):
+        return ArticleResolution(
+            candidate=candidate,
+            resolved_url=candidate.full_text_url,
+            full_text_url=candidate.full_text_url,
+            full_text_status="full_text",
+            license="https://creativecommons.org/licenses/by/4.0/",
+            source_priority=self.priority,
+        )
+
+    def fetch_full_text(self, resolution):
+        return OpenArticleSource(
+            title=resolution.candidate.title,
+            url=resolution.resolved_url or "",
+            source_type=self.name,
+            source_name=self.name,
+            doi=resolution.candidate.doi,
+            abstract=resolution.candidate.abstract,
+            body_text=(resolution.candidate.abstract or "") * 20,
+            extraction_quality_score=0.8,
+            full_text_status="full_text",
+            allowed_for_ai_processing=True,
+        )
+
+
 def test_open_literature_source_adapter_interface(settings):
     adapter = FakeFullTextAdapter()
     candidate = adapter.search("sepsis", OpenLiteratureSearchRequest(query="sepsis").filters)[0]
@@ -144,3 +207,30 @@ def test_open_literature_endpoint_works_with_mocked_service(client, app, monkeyp
 
     assert response.status_code == 200
     assert response.json()["full_text_count"] == 1
+
+
+def test_open_literature_plans_student_diabetes_pathophysiology_queries():
+    variants = OpenLiteratureSearchService._query_variants(
+        "Explain diabetes pathophysiology for a medical student."
+    )
+
+    assert "diabetes mellitus pathophysiology review" in variants
+    assert "type 1 diabetes autoimmune beta cell destruction pathophysiology" in variants
+    assert "type 2 diabetes insulin resistance pathophysiology review" in variants
+    assert all("medical student" not in item.lower() for item in variants)
+
+
+def test_open_literature_prefers_broad_pathophysiology_reviews(settings):
+    service = OpenLiteratureSearchService(
+        settings=settings,
+        safety_service=SafetyService(),
+        adapters=[FakeDiabetesMixedAdapter()],
+    )
+
+    result = service.search(
+        OpenLiteratureSearchRequest(query="Explain diabetes pathophysiology for a medical student.")
+    )
+
+    assert result.status == "ok"
+    assert result.query_variants[0] == "diabetes mellitus pathophysiology review"
+    assert result.selected_sources[0].title == "Diabetes mellitus pathophysiology review"

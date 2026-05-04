@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from pydantic import SecretStr
+
+from app.schemas.prompt_enhancement import PromptEnhanceV2Request
+from app.services.prompt_enhancer_v2_service import PromptEnhancerV2Service
+from app.services.safety_service import SafetyService
+
 
 def test_prompt_enhance_v2_routes_uploaded_pdf_request(client):
     response = client.post(
@@ -12,7 +18,7 @@ def test_prompt_enhance_v2_routes_uploaded_pdf_request(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["inferred_mode"] in {"rag", "simplify"}
+    assert payload["inferred_mode"] == "document_rag"
     assert payload["rag_query"]
     assert payload["safety_plan"]
     assert "diabetes" in payload["optimized_prompt"].lower()
@@ -29,6 +35,53 @@ def test_prompt_enhance_v2_routes_full_text_to_open_literature(client):
     assert payload["inferred_mode"] == "open_literature"
     assert payload["open_literature_query"]
     assert any("Full-text" in warning or "Full text" in warning for warning in payload["warnings"])
+
+
+def test_prompt_enhance_v2_general_education_without_strict_grounding(client):
+    response = client.post(
+        "/api/prompts/enhance-v2",
+        json={
+            "raw_input": "Explain diabetes pathophysiology for a medical student.",
+            "source_scope": "auto",
+            "strict_grounding": False,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["inferred_mode"] == "general_education"
+    assert payload["open_article_instruction"] is None
+    assert payload["rag_query"] is None
+
+
+def test_prompt_enhance_v2_general_education_with_strict_grounding_never_open_article(client):
+    response = client.post(
+        "/api/prompts/enhance-v2",
+        json={
+            "raw_input": "Explain diabetes pathophysiology for a medical student.",
+            "source_scope": "auto",
+            "strict_grounding": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["inferred_mode"] in {"general_education", "open_literature"}
+    assert payload["inferred_mode"] != "open_article"
+    assert payload["open_article_instruction"] is None
+    assert payload["warnings"]
+
+
+def test_prompt_enhance_v2_url_routes_to_open_article(client):
+    response = client.post(
+        "/api/prompts/enhance-v2",
+        json={"raw_input": "Summarize this article: https://example.com/article"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["inferred_mode"] == "open_article"
+    assert payload["open_article_instruction"]
 
 
 def test_prompt_enhance_v2_transforms_unsafe_diagnostic_prompt(client):
@@ -64,3 +117,30 @@ def test_old_prompt_improve_still_works(client):
 
     assert response.status_code == 200
     assert response.json()["improved_prompt"]
+
+
+def test_prompt_enhance_v2_llm_override_cannot_force_open_article_without_url(settings):
+    class BadGroq:
+        def generate_json(self, *args, **kwargs):
+            return {
+                "inferred_mode": "open_article",
+                "optimized_prompt": "Route: open_article",
+                "open_article_instruction": "Import a nonexistent article URL.",
+            }
+
+    live_settings = settings.model_copy(update={"app_env": "development", "groq_api_key": SecretStr("test")})
+    service = PromptEnhancerV2Service(
+        settings=live_settings,
+        safety_service=SafetyService(),
+        groq_client=BadGroq(),
+    )
+
+    result = service.enhance(
+        PromptEnhanceV2Request(
+            raw_input="Explain diabetes pathophysiology for a medical student.",
+            strict_grounding=False,
+        )
+    )
+
+    assert result.inferred_mode == "general_education"
+    assert result.open_article_instruction is None

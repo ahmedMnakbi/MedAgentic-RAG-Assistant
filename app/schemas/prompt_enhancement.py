@@ -6,11 +6,14 @@ from pydantic import BaseModel, Field
 
 PromptTargetMode = Literal[
     "auto",
+    "general_education",
     "rag",
+    "document_rag",
     "summarize",
     "simplify",
     "quiz",
     "pubmed",
+    "pubmed_metadata",
     "open_literature",
     "open_article",
     "prompt_enhance",

@@ -22,6 +22,7 @@ from app.services.answer_service import AnswerService
 from app.services.document_registry_service import DocumentRegistryService
 from app.services.document_service import DocumentService
 from app.services.document_workflow_service import DocumentWorkflowService
+from app.services.general_education_service import GeneralEducationService
 from app.services.prompt_enhancer_service import PromptEnhancerService
 from app.services.prompt_enhancer_v2_service import PromptEnhancerV2Service
 from app.services.prompt_library_service import PromptLibraryService
@@ -85,6 +86,7 @@ def build_services(settings: Settings) -> SimpleNamespace:
         ),
         rag_service=rag_service,
         answer_service=answer_service,
+        general_education_service=GeneralEducationService(settings=settings, groq_client=groq_client),
         summarization_service=summarization_service,
         simplification_service=simplification_service,
         quiz_service=quiz_service,

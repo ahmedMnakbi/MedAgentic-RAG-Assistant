@@ -7,7 +7,7 @@ APP_DESCRIPTION = (
     "It does not provide diagnosis, dosage advice, emergency triage, or personalized treatment."
 )
 
-DEFAULT_ROUTER_MODE = "rag"
+DEFAULT_ROUTER_MODE = "general_education"
 DEFAULT_COLLECTION_NAME = "medical_chunks"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 

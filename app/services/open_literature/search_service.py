@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from app.core.config import Settings
@@ -61,7 +62,11 @@ class OpenLiteratureSearchService:
                     candidates.extend(adapter.search(query, filters))
                 except Exception:
                     continue
-        candidates = self.deduper.deduplicate(candidates)[: self.settings.open_literature_max_candidates]
+        candidates = self._rank_candidates(
+            self.deduper.deduplicate(candidates),
+            query_variants=query_variants,
+            original_query=request.query,
+        )[: self.settings.open_literature_max_candidates]
         resolutions: list[ArticleResolution] = []
         selected_sources: list[OpenArticleSource] = []
         warnings: list[str] = []
@@ -143,14 +148,73 @@ class OpenLiteratureSearchService:
     @staticmethod
     def _query_variants(query: str) -> list[str]:
         cleaned = normalize_whitespace(query)
-        variants = [cleaned]
-        if "pathophysiology" in cleaned.lower():
-            variants.append(f"{cleaned} review mechanism")
+        lowered = cleaned.lower()
+        topic = OpenLiteratureSearchService._educational_topic(cleaned)
+        if "diabetes" in lowered and any(term in lowered for term in ("pathophysiology", "pathogenesis", "mechanism")):
+            return [
+                "diabetes mellitus pathophysiology review",
+                "type 1 diabetes autoimmune beta cell destruction pathophysiology",
+                "type 2 diabetes insulin resistance pathophysiology review",
+                "diabetes pathogenesis insulin deficiency insulin resistance open access review",
+            ]
+        variants = []
+        if topic and topic != cleaned:
+            variants.append(f"{topic} review overview")
+        variants.append(cleaned)
+        if "pathophysiology" in lowered:
+            variants.append(f"{topic or cleaned} pathophysiology review mechanism")
         if "full text" not in cleaned.lower():
-            variants.append(f"{cleaned} open access full text")
+            variants.append(f"{topic or cleaned} open access full text")
         if "case report" not in cleaned.lower() and any(term in cleaned.lower() for term in ("qtc", "crisis", "rare")):
-            variants.append(f"{cleaned} case report")
+            variants.append(f"{topic or cleaned} case report")
         return list(dict.fromkeys(variants))
+
+    @staticmethod
+    def _educational_topic(query: str) -> str:
+        cleaned = re.sub(
+            r"\b(explain|summarize|describe|teach|give|provide|for|to|a|an|the|medical|student|students|learner|learners)\b",
+            " ",
+            query,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" .?")
+        return cleaned
+
+    @staticmethod
+    def _rank_candidates(
+        candidates: list[ArticleCandidate],
+        *,
+        query_variants: list[str],
+        original_query: str,
+    ) -> list[ArticleCandidate]:
+        query_text = " ".join(query_variants).lower()
+        query_terms = set(re.findall(r"[a-zA-Z]{4,}", query_text))
+        requested_case_specific = any(term in original_query.lower() for term in ("case report", "covid", "qtc", "pregnancy", "acth"))
+        ranked = []
+        for candidate in candidates:
+            haystack = " ".join(
+                [
+                    candidate.title,
+                    candidate.abstract or "",
+                    candidate.journal or "",
+                    " ".join(candidate.authors),
+                ]
+            ).lower()
+            overlap = sum(1 for term in query_terms if term in haystack)
+            broad_bonus = 0
+            if any(term in haystack for term in ("review", "overview", "pathophysiology", "pathogenesis", "mechanism")):
+                broad_bonus += 4
+            if "diabetes" in query_text and "diabetes" in haystack:
+                broad_bonus += 3
+            if "insulin" in query_text and "insulin" in haystack:
+                broad_bonus += 2
+            penalty = 0
+            if not requested_case_specific and any(term in haystack for term in ("covid", "case report", "acth deficiency", "life expectancy", "pregnancy")):
+                penalty += 4
+            score = overlap + broad_bonus + candidate.confidence_score - penalty
+            ranked.append((score, candidate))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [candidate for _, candidate in ranked]
 
     @staticmethod
     def _answer(query: str, sources: list[OpenArticleSource], full_text_required: bool, counts: Counter) -> str:

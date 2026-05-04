@@ -9,6 +9,18 @@ from app.services.safety_service import SafetyService
 from app.utils.text import normalize_whitespace
 
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
+DOCUMENT_REFERENCE_TERMS = (
+    "uploaded",
+    "pdf",
+    "document",
+    "file",
+    "notes",
+    "according to the document",
+    "from this pdf",
+    "from the pdf",
+    "from my file",
+)
+OPEN_ARTICLE_TERMS = ("article url", "specific article", "import article", "analyze this article")
 
 
 class PromptEnhancerV2Service:
@@ -34,7 +46,8 @@ class PromptEnhancerV2Service:
                 temperature=0.0,
                 model_name=self.settings.groq_model_prompt_enhancer,
             )
-            return PromptEnhanceV2Response.model_validate({**fallback.model_dump(), **payload})
+            candidate = PromptEnhanceV2Response.model_validate({**fallback.model_dump(), **payload})
+            return self._enforce_route_constraints(request, candidate, fallback)
         except Exception:
             return fallback
 
@@ -60,7 +73,17 @@ class PromptEnhancerV2Service:
         elif safety.category == "safe_with_caution" and safety.caution:
             warnings.append(safety.caution)
 
-        if full_text_required and inferred_mode in {"pubmed", "open_literature"}:
+        if (
+            request.strict_grounding
+            and source_scope == "none"
+            and inferred_mode == "general_education"
+            and not full_text_required
+        ):
+            warnings.append(
+                "Strict grounding is enabled but no source was specified; use Open Literature when citations are required."
+            )
+
+        if full_text_required and inferred_mode in {"pubmed", "pubmed_metadata", "open_literature"}:
             inferred_mode = "open_literature"
             source_scope = "open_literature"
             warnings.append("Full-text requests should use the Open Literature Engine and exclude abstract-only sources from evidence claims.")
@@ -83,7 +106,9 @@ class PromptEnhancerV2Service:
             optimized_prompt=optimized_prompt,
             rag_query=topic_query if source_scope in {"uploaded_documents", "both"} else None,
             pubmed_query=self._pubmed_query(topic_query) if source_scope in {"pubmed", "both"} else None,
-            open_literature_query=topic_query if source_scope == "open_literature" else None,
+            open_literature_query=topic_query
+            if source_scope == "open_literature" or "Open Literature" in " ".join(warnings)
+            else None,
             open_article_instruction=self._open_article_instruction(raw) if source_scope == "open_article" else None,
             context_plan=self._context_plan(source_scope, full_text_required),
             retrieval_plan=self._retrieval_plan(source_scope, full_text_required) if request.include_retrieval_plan else [],
@@ -106,19 +131,23 @@ class PromptEnhancerV2Service:
             return request.target_mode
         if URL_PATTERN.search(lowered):
             return "open_article"
-        if any(term in lowered for term in ("full text", "full-text", "real articles", "not just abstracts", "open literature")):
+        if any(term in lowered for term in DOCUMENT_REFERENCE_TERMS):
+            return "document_rag"
+        if any(term in lowered for term in ("pubmed", "pmid", "ncbi")):
+            return "pubmed_metadata"
+        if any(term in lowered for term in ("full text", "full-text", "real articles", "not just abstracts", "open literature", "studies", "papers", "articles", "literature")):
             return "open_literature"
-        if any(term in lowered for term in ("pubmed", "pmid", "ncbi", "studies", "papers", "articles", "literature")):
-            return "pubmed"
+        if any(term in lowered for term in OPEN_ARTICLE_TERMS):
+            return "open_article"
         if any(term in lowered for term in ("quiz", "mcq", "exam question", "test me")):
-            return "quiz"
+            return "document_rag" if any(term in lowered for term in DOCUMENT_REFERENCE_TERMS) else "general_education"
         if any(term in lowered for term in ("simplify", "plain language", "like i'm", "like im", "easy")):
-            return "simplify"
+            return "document_rag" if any(term in lowered for term in DOCUMENT_REFERENCE_TERMS) else "general_education"
         if any(term in lowered for term in ("summarize", "summary", "digest", "key points")):
-            return "summarize"
+            return "document_rag" if any(term in lowered for term in DOCUMENT_REFERENCE_TERMS) else "general_education"
         if "prompt" in lowered and any(term in lowered for term in ("improve", "enhance", "better", "optimize")):
             return "prompt_enhance"
-        return "rag"
+        return "general_education"
 
     @staticmethod
     def _infer_scope(request: PromptEnhanceV2Request, inferred_mode: str, lowered: str) -> str:
@@ -128,11 +157,11 @@ class PromptEnhancerV2Service:
             return "open_article"
         if inferred_mode == "open_literature":
             return "open_literature"
-        if inferred_mode == "pubmed":
+        if inferred_mode in {"pubmed", "pubmed_metadata"}:
             return "pubmed"
         if any(term in lowered for term in ("pdf", "uploaded", "document", "notes")):
             return "uploaded_documents"
-        return "uploaded_documents" if inferred_mode in {"rag", "summarize", "simplify", "quiz"} else "none"
+        return "uploaded_documents" if inferred_mode in {"rag", "document_rag"} else "none"
 
     @staticmethod
     def _topic_query(text: str) -> str:
@@ -263,3 +292,39 @@ class PromptEnhancerV2Service:
             f"Fallback package JSON:\n{fallback.model_dump_json()}\n\n"
             "Return JSON matching the fallback keys exactly."
         )
+
+    @staticmethod
+    def _enforce_route_constraints(
+        request: PromptEnhanceV2Request,
+        candidate: PromptEnhanceV2Response,
+        fallback: PromptEnhanceV2Response,
+    ) -> PromptEnhanceV2Response:
+        raw = request.raw_input.lower()
+        has_url = bool(URL_PATTERN.search(request.raw_input))
+        has_document_reference = any(term in raw for term in DOCUMENT_REFERENCE_TERMS)
+        has_pubmed_reference = any(term in raw for term in ("pubmed", "pmid", "ncbi"))
+        has_literature_reference = any(
+            term in raw
+            for term in (
+                "full text",
+                "full-text",
+                "real articles",
+                "not just abstracts",
+                "open literature",
+                "studies",
+                "papers",
+                "articles",
+                "literature",
+            )
+        )
+        if not has_url and candidate.inferred_mode == "open_article":
+            return fallback
+        if not has_url and candidate.open_article_instruction:
+            return fallback
+        if (
+            request.target_mode == "auto"
+            and not any((has_url, has_document_reference, has_pubmed_reference, has_literature_reference))
+            and (candidate.inferred_mode != "open_literature" or not request.strict_grounding)
+        ):
+            return fallback
+        return candidate

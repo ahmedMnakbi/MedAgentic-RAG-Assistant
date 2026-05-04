@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import APIRouter, Request
 
 from app.schemas.chat import AskRequest, AskResponse
+from app.schemas.open_literature import OpenLiteratureSearchRequest
 from app.services.rag_service import RetrievedChunk
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -48,7 +49,11 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
     if safety.caution:
         base_warnings.append(safety.caution)
 
-    mode = services.router_service.resolve_mode(payload.mode, payload.question)
+    mode = services.router_service.resolve_mode(
+        payload.mode,
+        payload.question,
+        document_ids=payload.document_ids,
+    )
     enhanced_prompt = None
 
     if mode == "prompt_enhance":
@@ -63,6 +68,28 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             answer="Prompt improved for clearer structure and execution without changing the original intent.",
             safety=safety,
             enhanced_prompt=enhanced_prompt,
+        )
+
+    if mode == "general_education":
+        answer = services.general_education_service.answer(payload.question)
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                warnings=base_warnings + post_warnings,
+            )
+        return AskResponse(
+            status="ok",
+            mode_used="general_education",
+            answer=answer,
+            safety=safety,
+            enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings
+            + post_warnings
+            + ["No uploaded documents were used. Use Open Literature or document RAG when you need grounded citations."],
         )
 
     if payload.enhance_prompt:
@@ -94,6 +121,38 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             enhanced_prompt=enhanced_prompt,
             warnings=warnings,
         )
+
+    if mode == "open_literature":
+        literature_response = services.open_literature_service.search(
+            OpenLiteratureSearchRequest(query=payload.question)
+        )
+        return AskResponse(
+            status="ok" if literature_response.status == "ok" else "no_source",
+            mode_used="open_literature",
+            answer=literature_response.answer or "No usable open literature sources were found.",
+            safety=safety,
+            enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings + literature_response.warnings,
+        )
+
+    if mode == "open_article":
+        return AskResponse(
+            status="no_source",
+            mode_used="open_article",
+            answer="Open Article routing requires using the Open Article panel or endpoint so MARA can validate and import the URL safely.",
+            safety=safety,
+            enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings + ["A URL was detected, but Assistant Lab does not import article URLs directly."],
+        )
+
+    if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"} and not payload.document_ids:
+        if not services.document_service.list_documents():
+            return _build_no_source_response(
+                payload,
+                safety,
+                mode_used=mode,
+                enhanced_prompt=enhanced_prompt,
+            )
 
     retrieved_chunks: list[RetrievedChunk] = services.rag_service.retrieve(
         payload.question,
@@ -204,7 +263,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         )
     return AskResponse(
         status="ok",
-        mode_used="rag",
+        mode_used="document_rag" if mode == "document_rag" else "rag",
         answer=answer,
         safety=safety,
         sources=sources,
