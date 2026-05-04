@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.schemas.common import QuizItem
 from app.services.rag_service import RetrievedChunk
 
@@ -12,7 +14,7 @@ def test_rag_mode_returns_grounded_answer(client, app, monkeypatch):
             score=0.12,
         )
     ]
-    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [object()])
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [SimpleNamespace(document_id="doc_1")])
     monkeypatch.setattr(app.state.services.rag_service, "retrieve", lambda *args, **kwargs: retrieved)
     monkeypatch.setattr(
         app.state.services.answer_service,
@@ -106,6 +108,11 @@ def test_selected_document_quiz_uses_document_context_for_generic_pdf_prompt(cli
         app.state.services.rag_service,
         "retrieve_document_chunks",
         lambda *args, **kwargs: selected_chunks,
+    )
+    monkeypatch.setattr(
+        app.state.services.document_service,
+        "list_documents",
+        lambda: [SimpleNamespace(document_id="diabetes-doc")],
     )
 
     def fake_generate_context(question, context, **kwargs):
@@ -229,7 +236,7 @@ def test_auto_uploaded_pdf_question_falls_back_cleanly_when_vectorstore_fails(cl
             score=0.0,
         )
     ]
-    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [object()])
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [SimpleNamespace(document_id="diabetes-doc")])
     monkeypatch.setattr(
         app.state.services.rag_service,
         "retrieve",
@@ -251,3 +258,23 @@ def test_auto_uploaded_pdf_question_falls_back_cleanly_when_vectorstore_fails(cl
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["mode_used"] == "document_rag"
+
+
+def test_deleted_document_chunks_are_filtered_from_chat(client, app, monkeypatch):
+    stale_chunk = RetrievedChunk(
+        text="Deleted document content about diabetes.",
+        metadata={"document_id": "deleted-doc", "filename": "deleted.pdf", "page": 0, "chunk_id": "c1"},
+        score=1.0,
+    )
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [SimpleNamespace(document_id="other-doc")])
+    monkeypatch.setattr(app.state.services.rag_service, "retrieve", lambda *args, **kwargs: [stale_chunk])
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: [])
+
+    response = client.post(
+        "/api/chat/ask",
+        json={"question": "What does the uploaded PDF say about diabetes?", "mode": "auto"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "no_source"

@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, Request, UploadFile
 from app.core.exceptions import AppError, ExternalServiceError
 from app.schemas.documents import (
     DocumentRecord,
+    DocumentDeleteResponse,
     DocumentUploadResponse,
     DocumentWorkflowRequest,
     DocumentWorkflowResponse,
@@ -43,6 +44,19 @@ async def upload_document(
     except Exception as exc:
         raise ExternalServiceError(
             "Document upload failed before indexing could complete. Existing indexed documents were left unchanged."
+        ) from exc
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+def delete_document(document_id: str, request: Request) -> DocumentDeleteResponse:
+    services = _get_services(request)
+    try:
+        return services.document_service.delete_document(document_id)
+    except AppError:
+        raise
+    except Exception as exc:
+        raise ExternalServiceError(
+            "Document deletion failed before cleanup could complete. Existing documents were left unchanged."
         ) from exc
 
 

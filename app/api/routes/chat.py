@@ -320,18 +320,18 @@ def _retrieve_document_chunks_for_chat(
     try:
         if use_full_selected_context:
             chunks = services.rag_service.retrieve_document_chunks(document_ids=payload.document_ids)
-            if chunks:
-                return chunks
         else:
             chunks = services.rag_service.retrieve(
                 payload.question,
                 top_k=payload.top_k,
                 document_ids=payload.document_ids,
             )
-            if chunks:
-                return chunks
     except Exception:
         chunks = []
+
+    chunks = _filter_registered_chunks(services, chunks)
+    if chunks:
+        return chunks
 
     if use_full_selected_context:
         return services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
@@ -339,6 +339,25 @@ def _retrieve_document_chunks_for_chat(
         chunks = services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
         return _rank_fallback_chunks(payload.question, chunks, top_k=payload.top_k)
     return []
+
+
+def _filter_registered_chunks(services: SimpleNamespace, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    try:
+        known_ids = {
+            document_id
+            for document_id in (
+                getattr(document, "document_id", None)
+                for document in services.document_service.list_documents()
+            )
+            if document_id
+        }
+    except Exception:
+        return chunks
+    return [
+        chunk
+        for chunk in chunks
+        if str(chunk.metadata.get("document_id", "")) in known_ids
+    ]
 
 
 def _rank_fallback_chunks(question: str, chunks: list[RetrievedChunk], *, top_k: int) -> list[RetrievedChunk]:

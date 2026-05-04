@@ -27,6 +27,23 @@ class DocumentRegistryService:
             documents.append(document.model_dump())
             self._write(payload)
 
+    def remove_document(self, document_id: str) -> DocumentRecord | None:
+        with self._lock:
+            payload = self._read()
+            documents = payload.setdefault("documents", [])
+            removed: DocumentRecord | None = None
+            kept = []
+            for item in documents:
+                document = DocumentRecord.model_validate(item)
+                if document.document_id == document_id:
+                    removed = document
+                else:
+                    kept.append(document.model_dump())
+            if removed:
+                payload["documents"] = kept
+                self._write(payload)
+            return removed
+
     def find_by_hash(self, document_hash: str) -> DocumentRecord | None:
         if not document_hash:
             return None

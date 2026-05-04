@@ -8,8 +8,8 @@ from typing import Any
 from app.clients.pdf_loader import PDFLoaderClient
 from app.clients.vectorstore_client import VectorStoreClient
 from app.core.config import Settings
-from app.core.exceptions import EmptyPdfError, ExternalServiceError, InvalidPdfError
-from app.schemas.documents import DocumentRecord, DocumentUploadResponse
+from app.core.exceptions import EmptyPdfError, ExternalServiceError, InvalidPdfError, ResourceNotFoundError
+from app.schemas.documents import DocumentDeleteResponse, DocumentRecord, DocumentUploadResponse
 from app.services.rag_service import RetrievedChunk
 from app.services.document_registry_service import DocumentRegistryService
 from app.utils.file_validation import validate_pdf_upload
@@ -90,6 +90,7 @@ class DocumentService:
             vector_indexed = False
 
         uploaded_at = datetime.now(UTC).isoformat()
+        indexing_status = "indexed" if vector_indexed else "indexed_text_only"
         record = DocumentRecord(
             document_id=document_id,
             filename=filename,
@@ -97,6 +98,7 @@ class DocumentService:
             chunk_count=len(chunked_documents),
             uploaded_at=uploaded_at,
             document_hash=document_hash,
+            indexing_status=indexing_status,
         )
         try:
             self.registry_service.save_document(record)
@@ -105,8 +107,27 @@ class DocumentService:
             raise ExternalServiceError("Document metadata could not be written to the registry.") from exc
         return DocumentUploadResponse(
             **record.model_dump(),
-            status="indexed" if vector_indexed else "indexed_text_only",
+            status=indexing_status,
         )
+
+    def delete_document(self, document_id: str) -> DocumentDeleteResponse:
+        record = self.registry_service.remove_document(document_id)
+        if record is None:
+            raise ResourceNotFoundError("Document was not found in MARA's registry.")
+
+        warnings: list[str] = []
+        try:
+            self.vectorstore_client.delete_document(document_id)
+        except Exception:
+            warnings.append("Vector entries could not be deleted; local metadata and PDF file were removed.")
+
+        file_path = self.settings.upload_dir / f"{document_id}.pdf"
+        try:
+            file_path.unlink(missing_ok=True)
+        except Exception:
+            warnings.append("Stored PDF file could not be removed from local storage.")
+
+        return DocumentDeleteResponse(document_id=document_id, warnings=warnings)
 
     def load_stored_document_chunks(
         self,
@@ -115,9 +136,16 @@ class DocumentService:
     ) -> list[RetrievedChunk]:
         records = self.list_documents()
         selected_ids = set(document_ids or [])
-        selected_records = [record for record in records if not selected_ids or record.document_id in selected_ids]
+        selected_records = [
+            record
+            for record in records
+            if not selected_ids or getattr(record, "document_id", None) in selected_ids
+        ]
         chunks: list[RetrievedChunk] = []
         for record in selected_records:
+            document_id = getattr(record, "document_id", None)
+            if not document_id:
+                continue
             file_path = self.settings.upload_dir / f"{record.document_id}.pdf"
             if not file_path.exists():
                 continue

@@ -459,6 +459,19 @@ body::before {
   cursor: pointer;
 }
 
+.document-card-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.danger-button {
+  color: var(--danger);
+  font-size: 0.82rem;
+  padding: 2px 0;
+}
+
 .pubmed-select-card {
   display: grid;
   grid-template-columns: 22px 1fr;

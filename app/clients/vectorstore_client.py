@@ -76,3 +76,9 @@ class VectorStoreClient:
             for text, metadata in zip(texts, metadatas, strict=False)
             if text
         ]
+
+    def delete_document(self, document_id: str) -> None:
+        store = self.get_store()
+        if not hasattr(store, "delete"):
+            return
+        store.delete(where={"document_id": document_id})

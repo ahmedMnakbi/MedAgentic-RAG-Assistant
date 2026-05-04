@@ -12,10 +12,17 @@ class DocumentRecord(BaseModel):
     chunk_count: int
     uploaded_at: str
     document_hash: str | None = None
+    indexing_status: str = "indexed"
 
 
 class DocumentUploadResponse(DocumentRecord):
     status: str = "indexed"
+
+
+class DocumentDeleteResponse(BaseModel):
+    status: str = "deleted"
+    document_id: str
+    warnings: list[str] = Field(default_factory=list)
 
 
 DocumentWorkflowAction = Literal[

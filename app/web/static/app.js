@@ -65,11 +65,15 @@ function renderDocuments() {
     .map(
       (doc) => `
         <article class="document-card">
-          <strong>${escapeHtml(doc.filename)}</strong>
+          <div class="document-card-top">
+            <strong>${escapeHtml(doc.filename)}</strong>
+            <button class="text-button danger-button" type="button" data-delete-document="${escapeHtml(doc.document_id)}">Delete</button>
+          </div>
           <div class="meta-line">
             <span>ID: <span class="mono">${escapeHtml(doc.document_id)}</span></span>
             <span>${doc.page_count} pages</span>
             <span>${doc.chunk_count} chunks</span>
+            <span>${escapeHtml(doc.indexing_status || "indexed")}</span>
           </div>
           <p class="microcopy">Uploaded ${new Date(doc.uploaded_at).toLocaleString()}</p>
         </article>
@@ -98,6 +102,23 @@ async function loadDocuments() {
   const docs = await api("/api/documents");
   state.documents = docs;
   renderDocuments();
+}
+
+async function deleteDocument(documentId) {
+  const status = document.getElementById("upload-status");
+  const confirmed = window.confirm(
+    "Delete this document from MARA? This removes it from retrieval and study workflows.",
+  );
+  if (!confirmed) return;
+  try {
+    const payload = await api(`/api/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" });
+    status.textContent = payload.warnings?.length
+      ? `Deleted document with warnings: ${payload.warnings.join(" ")}`
+      : "Deleted document from MARA.";
+    await loadDocuments();
+  } catch (error) {
+    status.textContent = error.message;
+  }
 }
 
 function renderDocumentSources(sources) {
@@ -539,6 +560,18 @@ function renderKeyValueList(items) {
 function renderPromptEnhanceV2(payload) {
   const shell = document.getElementById("prompt-enhance-v2-result");
   shell.className = "result-shell";
+  const routeButtons = `
+    ${
+      payload.inferred_mode === "open_literature"
+        ? `<button class="secondary-button" type="button" data-enhanced-to-open-literature="true">Send to Open Literature</button>`
+        : ""
+    }
+    ${
+      payload.inferred_mode === "open_article"
+        ? `<button class="secondary-button" type="button" data-enhanced-to-open-article="true">Send to Open Article</button>`
+        : ""
+    }
+  `;
   shell.innerHTML = `
     <article class="result-card">
       <div class="result-topline">
@@ -550,7 +583,18 @@ function renderPromptEnhanceV2(payload) {
       <div class="inline-actions">
         <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_prompt)}">Copy prompt</button>
         <button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>
+        ${routeButtons}
       </div>
+    </article>
+    <article class="result-card">
+      <h3>Route & Source Plan</h3>
+      <ul>
+        <li>Route: ${escapeHtml(payload.inferred_mode)}</li>
+        <li>RAG query: ${escapeHtml(payload.rag_query || "not required")}</li>
+        <li>PubMed query: ${escapeHtml(payload.pubmed_query || "not required")}</li>
+        <li>Open Literature query: ${escapeHtml(payload.open_literature_query || "not required")}</li>
+        <li>Open Article: ${escapeHtml(payload.open_article_instruction || "not required")}</li>
+      </ul>
     </article>
     <article class="result-card">
       <h3>Retrieval Plan</h3>
@@ -561,18 +605,22 @@ function renderPromptEnhanceV2(payload) {
       <ul>${renderKeyValueList(payload.context_plan)}</ul>
     </article>
     <article class="result-card">
-      <h3>Harness Checks</h3>
+      <h3>Safety & Harness Checks</h3>
       <ul>${renderKeyValueList([...(payload.safety_plan || []), ...(payload.quality_checks || [])])}</ul>
       ${(payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("")}
     </article>
-    <article class="result-card">
-      <h3>Raw JSON</h3>
+    <details class="result-card">
+      <summary>Raw JSON</summary>
       <div class="prompt-template mono">${escapeHtml(JSON.stringify(payload, null, 2))}</div>
-    </article>
+      <div class="inline-actions">
+        <button class="secondary-button" type="button" data-copy-text="${escapeHtml(JSON.stringify(payload, null, 2))}">Copy JSON</button>
+      </div>
+    </details>
   `;
   shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
   shell.dataset.originalInput = payload.original_input || "";
   shell.dataset.inferredMode = payload.inferred_mode || "auto";
+  shell.dataset.openLiteratureQuery = payload.open_literature_query || payload.original_input || "";
 }
 
 function setAssistantModeFromEnhancement(inferredMode) {
@@ -819,6 +867,13 @@ function bindStaticInteractions() {
     await loadDocuments();
   });
 
+  document.getElementById("documents-list").addEventListener("click", async (event) => {
+    const deleteButton = event.target.closest("[data-delete-document]");
+    if (deleteButton) {
+      await deleteDocument(deleteButton.dataset.deleteDocument);
+    }
+  });
+
   document.getElementById("all-docs-toggle").addEventListener("change", (event) => {
     document.getElementById("doc-picker-wrap").classList.toggle("hidden", event.target.checked);
   });
@@ -899,15 +954,16 @@ function bindStaticInteractions() {
     }
   });
 
-  document.getElementById("prompt-suggest-form").addEventListener("submit", suggestPrompts);
-  document.getElementById("prompt-search-form").addEventListener("submit", searchPrompts);
+  document.getElementById("prompt-suggest-form")?.addEventListener("submit", suggestPrompts);
+  document.getElementById("prompt-search-form")?.addEventListener("submit", searchPrompts);
 
   document.querySelectorAll(".prompt-filter-button").forEach((button) => {
     button.addEventListener("click", async () => {
       document.querySelectorAll(".prompt-filter-button").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       state.promptCategory = button.dataset.category || "";
-      document.getElementById("prompt-search-category").value = state.promptCategory;
+      const categoryInput = document.getElementById("prompt-search-category");
+      if (categoryInput) categoryInput.value = state.promptCategory;
       await searchPrompts();
     });
   });
@@ -919,13 +975,13 @@ function bindStaticInteractions() {
     });
   });
 
-  document.getElementById("prompt-search-results").addEventListener("click", async (event) => {
+  document.getElementById("prompt-search-results")?.addEventListener("click", async (event) => {
     const card = event.target.closest("[data-prompt-id]");
     if (!card) return;
     await loadPromptDetail(card.dataset.promptId);
   });
 
-  document.getElementById("prompt-suggest-results").addEventListener("click", (event) => {
+  document.getElementById("prompt-suggest-results")?.addEventListener("click", (event) => {
     const improveButton = event.target.closest("[data-suggestion-to-improver]");
     if (improveButton) {
       const suggestion = getPromptSuggestionById(improveButton.dataset.suggestionToImprover);
@@ -946,7 +1002,7 @@ function bindStaticInteractions() {
     }
   });
 
-  document.getElementById("prompt-improve-form").addEventListener("submit", async (event) => {
+  document.getElementById("prompt-improve-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const shell = document.getElementById("prompt-improve-result");
     shell.className = "prompt-improve-result empty-state";
@@ -1011,6 +1067,20 @@ function bindStaticInteractions() {
       setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || "auto");
       document.getElementById("chat-question").focus();
     }
+    const openLiteratureButton = event.target.closest("[data-enhanced-to-open-literature]");
+    if (openLiteratureButton) {
+      const resultShell = document.getElementById("prompt-enhance-v2-result");
+      document.getElementById("open-literature-query").value =
+        resultShell.dataset.openLiteratureQuery || resultShell.dataset.originalInput || "";
+      document.getElementById("open-literature-query").focus();
+    }
+    const openArticleButton = event.target.closest("[data-enhanced-to-open-article]");
+    if (openArticleButton) {
+      const resultShell = document.getElementById("prompt-enhance-v2-result");
+      const match = (resultShell.dataset.originalInput || "").match(/https?:\/\/\S+/i);
+      document.getElementById("open-article-url").value = match ? match[0] : "";
+      document.getElementById("open-article-url").focus();
+    }
   });
 
   document.getElementById("open-literature-form").addEventListener("submit", async (event) => {
@@ -1066,7 +1136,6 @@ async function boot() {
   bindStaticInteractions();
   await loadHealth();
   await loadDocuments();
-  await searchPrompts();
 }
 
 boot().catch((error) => {

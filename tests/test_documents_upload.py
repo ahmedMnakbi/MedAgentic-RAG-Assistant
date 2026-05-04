@@ -152,6 +152,84 @@ def test_upload_registry_parse_failure_is_clear_not_internal(client, app):
     assert "registry" in payload["error"].lower()
 
 
+def test_delete_uploaded_pdf_removes_registry_and_file(client, app, monkeypatch):
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: None)
+    deleted = {}
+    monkeypatch.setattr(
+        app.state.services.document_service.vectorstore_client,
+        "delete_document",
+        lambda document_id: deleted.setdefault("document_id", document_id),
+    )
+    upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("delete_me.pdf", _text_pdf_bytes("Delete me text."), "application/pdf")},
+    )
+    document_id = upload.json()["document_id"]
+    file_path = app.state.settings.upload_dir / f"{document_id}.pdf"
+
+    response = client.delete(f"/api/documents/{document_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert deleted["document_id"] == document_id
+    assert not file_path.exists()
+    assert all(item["document_id"] != document_id for item in client.get("/api/documents").json())
+
+
+def test_delete_handles_vectorstore_failure_gracefully(client, app, monkeypatch):
+    monkeypatch.setattr(
+        app.state.services.document_service.vectorstore_client,
+        "add_documents",
+        lambda _documents: (_ for _ in ()).throw(RuntimeError("vector unavailable")),
+    )
+    upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("text_only.pdf", _text_pdf_bytes("Fallback text."), "application/pdf")},
+    )
+    document_id = upload.json()["document_id"]
+    monkeypatch.setattr(
+        app.state.services.document_service.vectorstore_client,
+        "delete_document",
+        lambda _document_id: (_ for _ in ()).throw(RuntimeError("delete failed")),
+    )
+
+    response = client.delete(f"/api/documents/{document_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "deleted"
+    assert payload["warnings"]
+    assert all(item["document_id"] != document_id for item in client.get("/api/documents").json())
+
+
+def test_delete_nonexistent_document_returns_clean_error(client):
+    response = client.delete("/api/documents/doc_missing")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "resource_not_found"
+
+
+def test_upload_same_pdf_after_deletion_indexes_again(client, app, monkeypatch):
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: None)
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "delete_document", lambda _document_id: None)
+    content = _text_pdf_bytes("Upload again after deletion.")
+    first = client.post(
+        "/api/documents/upload",
+        files={"file": ("again.pdf", content, "application/pdf")},
+    )
+
+    delete_response = client.delete(f"/api/documents/{first.json()['document_id']}")
+    second = client.post(
+        "/api/documents/upload",
+        files={"file": ("again.pdf", content, "application/pdf")},
+    )
+
+    assert delete_response.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["status"] == "indexed"
+    assert second.json()["document_id"] != first.json()["document_id"]
+
+
 def test_upload_rejects_invalid_extension(client):
     response = client.post(
         "/api/documents/upload",
