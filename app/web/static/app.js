@@ -67,13 +67,13 @@ function renderDocuments() {
         <article class="document-card">
           <div class="document-card-top">
             <strong>${escapeHtml(doc.filename)}</strong>
-            <button class="text-button danger-button" type="button" data-delete-document="${escapeHtml(doc.document_id)}">Delete</button>
+            <button class="danger-outline-button" type="button" data-delete-document="${escapeHtml(doc.document_id)}">Remove</button>
           </div>
           <div class="meta-line">
             <span>ID: <span class="mono">${escapeHtml(doc.document_id)}</span></span>
             <span>${doc.page_count} pages</span>
             <span>${doc.chunk_count} chunks</span>
-            <span>${escapeHtml(doc.indexing_status || "indexed")}</span>
+            <span>${escapeHtml(formatIndexingStatus(doc.indexing_status))}</span>
           </div>
           <p class="microcopy">Uploaded ${new Date(doc.uploaded_at).toLocaleString()}</p>
         </article>
@@ -102,6 +102,54 @@ async function loadDocuments() {
   const docs = await api("/api/documents");
   state.documents = docs;
   renderDocuments();
+}
+
+function formatIndexingStatus(status) {
+  const labels = {
+    indexed: "Vector indexed",
+    indexed_text_only: "Text fallback",
+  };
+  return labels[status] || "Vector indexed";
+}
+
+function cleanOpenLiteratureQuery(payload) {
+  const source = payload.open_literature_query || payload.original_input || "";
+  let query = source
+    .replace(/^[\s\-:•]+/, "")
+    .replace(/\b(find|search|show|explain|compare|summarize)\b/gi, " ")
+    .replace(/\b(real|usable)\b/gi, " ")
+    .replace(/\b(not just abstracts?|abstracts?)\b/gi, " ")
+    .replace(/\b(articles?|papers?|studies|literature)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!query) query = payload.original_input || "";
+  if (/diabetes/i.test(query) && !/mellitus/i.test(query)) {
+    query = query.replace(/\bdiabetes\b/i, "diabetes mellitus");
+  }
+  if (!/\bfull[- ]?text\b/i.test(query)) query = `${query} full text`;
+  if (!/\breview\b/i.test(query)) query = `${query} review`;
+  if (!/\bopen access\b/i.test(query)) query = `${query} open access`;
+  return query.replace(/\s+/g, " ").trim();
+}
+
+function inferFullTextRequired(payload) {
+  return Boolean(
+    payload.full_text_required ||
+      /full[- ]?text|not just abstracts?|real articles|open access/i.test(
+        `${payload.original_input || ""} ${payload.optimized_prompt || ""} ${payload.open_literature_query || ""}`,
+      ),
+  );
+}
+
+function outputFormatToOpenLiteratureMode(outputFormat) {
+  const map = {
+    evidence_table: "evidence_table",
+    article_digest: "article_digest",
+    study_notes: "study_notes",
+    quiz_json: "quiz",
+    deep_review: "deep_review",
+  };
+  return map[outputFormat] || "quick_answer";
 }
 
 async function deleteDocument(documentId) {
@@ -620,7 +668,9 @@ function renderPromptEnhanceV2(payload) {
   shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
   shell.dataset.originalInput = payload.original_input || "";
   shell.dataset.inferredMode = payload.inferred_mode || "auto";
-  shell.dataset.openLiteratureQuery = payload.open_literature_query || payload.original_input || "";
+  shell.dataset.openLiteratureQuery = cleanOpenLiteratureQuery(payload);
+  shell.dataset.fullTextRequired = String(inferFullTextRequired(payload));
+  shell.dataset.outputFormat = payload.output_format || "markdown";
 }
 
 function setAssistantModeFromEnhancement(inferredMode) {
@@ -1070,9 +1120,16 @@ function bindStaticInteractions() {
     const openLiteratureButton = event.target.closest("[data-enhanced-to-open-literature]");
     if (openLiteratureButton) {
       const resultShell = document.getElementById("prompt-enhance-v2-result");
-      document.getElementById("open-literature-query").value =
-        resultShell.dataset.openLiteratureQuery || resultShell.dataset.originalInput || "";
-      document.getElementById("open-literature-query").focus();
+      const queryInput = document.getElementById("open-literature-query");
+      const fullTextInput = document.getElementById("open-literature-fulltext");
+      const modeSelect = document.getElementById("open-literature-mode");
+      queryInput.value = resultShell.dataset.openLiteratureQuery || resultShell.dataset.originalInput || "";
+      fullTextInput.checked = resultShell.dataset.fullTextRequired === "true";
+      const targetMode = outputFormatToOpenLiteratureMode(resultShell.dataset.outputFormat || "markdown");
+      if (Array.from(modeSelect.options).some((option) => option.value === targetMode)) {
+        modeSelect.value = targetMode;
+      }
+      queryInput.focus();
     }
     const openArticleButton = event.target.closest("[data-enhanced-to-open-article]");
     if (openArticleButton) {

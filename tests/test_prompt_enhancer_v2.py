@@ -33,8 +33,29 @@ def test_prompt_enhance_v2_routes_full_text_to_open_literature(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["inferred_mode"] == "open_literature"
+    assert payload["full_text_required"] is True
+    assert payload["output_format"] == "markdown"
     assert payload["open_literature_query"]
+    assert "not just" not in payload["open_literature_query"].lower()
     assert any("Full-text" in warning or "Full text" in warning for warning in payload["warnings"])
+
+
+def test_prompt_enhance_v2_open_literature_query_is_handoff_ready(client):
+    response = client.post(
+        "/api/prompts/enhance-v2",
+        json={
+            "raw_input": "find diabetes pathophysiology full text not just abstracts",
+            "output_format": "evidence_table",
+            "full_text_required": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["inferred_mode"] == "open_literature"
+    assert payload["full_text_required"] is True
+    assert payload["output_format"] == "evidence_table"
+    assert payload["open_literature_query"] == "diabetes mellitus pathophysiology full text review open access"
 
 
 def test_prompt_enhance_v2_general_education_without_strict_grounding(client):

@@ -100,14 +100,17 @@ class PromptEnhancerV2Service:
         )
 
         topic_query = self._topic_query(safe_raw)
+        open_literature_query = self._open_literature_query(topic_query, full_text_required=full_text_required)
         response = PromptEnhanceV2Response(
             original_input=raw,
             intent_summary=self._intent_summary(raw, inferred_mode),
             inferred_mode=inferred_mode,
+            output_format=request.output_format,
+            full_text_required=full_text_required,
             optimized_prompt=optimized_prompt,
             rag_query=topic_query if source_scope in {"uploaded_documents", "both"} else None,
             pubmed_query=self._pubmed_query(topic_query) if source_scope in {"pubmed", "both"} else None,
-            open_literature_query=topic_query
+            open_literature_query=open_literature_query
             if source_scope == "open_literature" or "Open Literature" in " ".join(warnings)
             else None,
             open_article_instruction=self._open_article_instruction(raw) if source_scope == "open_article" else None,
@@ -167,6 +170,7 @@ class PromptEnhancerV2Service:
     @staticmethod
     def _topic_query(text: str) -> str:
         cleaned = re.sub(r"https?://\S+", " ", text, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bnot\s+just\s+abstracts?\b", " ", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(
             r"\b(explain|summarize|simplify|quiz|make|create|find|search|compare|from|this|pdf|uploaded|article|articles|studies|real|full|text|abstracts?)\b",
             " ",
@@ -174,6 +178,19 @@ class PromptEnhancerV2Service:
             flags=re.IGNORECASE,
         )
         return normalize_whitespace(cleaned) or normalize_whitespace(text)
+
+    @staticmethod
+    def _open_literature_query(topic: str, *, full_text_required: bool) -> str:
+        query = normalize_whitespace(topic).lstrip("-: ")
+        if "diabetes" in query.lower() and "mellitus" not in query.lower():
+            query = re.sub(r"\bdiabetes\b", "diabetes mellitus", query, count=1, flags=re.IGNORECASE)
+        if full_text_required and not re.search(r"\bfull[- ]?text\b", query, flags=re.IGNORECASE):
+            query = f"{query} full text"
+        if not re.search(r"\breview\b", query, flags=re.IGNORECASE):
+            query = f"{query} review"
+        if full_text_required and not re.search(r"\bopen access\b", query, flags=re.IGNORECASE):
+            query = f"{query} open access"
+        return normalize_whitespace(query)
 
     @staticmethod
     def _pubmed_query(topic: str) -> str:
