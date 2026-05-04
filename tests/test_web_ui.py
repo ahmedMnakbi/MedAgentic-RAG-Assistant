@@ -22,3 +22,4 @@ def test_prompt_enhancer_send_to_assistant_uses_original_task_not_prompt_package
     assert "shell.dataset.originalInput = payload.original_input || \"\";" in script
     assert "setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || \"auto\");" in script
     assert "resultShell.dataset.originalInput || resultShell.dataset.optimizedPrompt || \"\"" in script
+    assert "open_article: \"auto\"" in script

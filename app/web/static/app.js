@@ -844,7 +844,10 @@ function bindStaticInteractions() {
     const data = new FormData(form);
     try {
       const payload = await api("/api/documents/upload", { method: "POST", body: data });
-      status.textContent = `Indexed ${payload.filename} successfully.`;
+      status.textContent =
+        payload.status === "indexed_text_only"
+          ? `Saved ${payload.filename} for direct PDF workflows. Vector indexing is unavailable, so retrieval will use PDF text fallback.`
+          : `Indexed ${payload.filename} successfully.`;
       form.reset();
       await loadDocuments();
     } catch (error) {

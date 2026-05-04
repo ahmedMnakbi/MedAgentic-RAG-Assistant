@@ -66,8 +66,7 @@ def test_prompt_enhance_v2_general_education_with_strict_grounding_never_open_ar
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["inferred_mode"] in {"general_education", "open_literature"}
-    assert payload["inferred_mode"] != "open_article"
+    assert payload["inferred_mode"] == "general_education"
     assert payload["open_article_instruction"] is None
     assert payload["warnings"]
 
@@ -144,3 +143,30 @@ def test_prompt_enhance_v2_llm_override_cannot_force_open_article_without_url(se
 
     assert result.inferred_mode == "general_education"
     assert result.open_article_instruction is None
+
+
+def test_prompt_enhance_v2_llm_override_cannot_force_open_literature_for_plain_task(settings):
+    class BadGroq:
+        def generate_json(self, *args, **kwargs):
+            return {
+                "original_input": "Task: Explain diabetes pathophysiology\nRoute: open_literature",
+                "inferred_mode": "open_literature",
+                "optimized_prompt": "Task: Explain diabetes pathophysiology\nRoute: open_literature",
+            }
+
+    live_settings = settings.model_copy(update={"app_env": "development", "groq_api_key": SecretStr("test")})
+    service = PromptEnhancerV2Service(
+        settings=live_settings,
+        safety_service=SafetyService(),
+        groq_client=BadGroq(),
+    )
+
+    result = service.enhance(
+        PromptEnhanceV2Request(
+            raw_input="Explain diabetes pathophysiology for a medical student.",
+            strict_grounding=True,
+        )
+    )
+
+    assert result.original_input == "Explain diabetes pathophysiology for a medical student."
+    assert result.inferred_mode == "general_education"

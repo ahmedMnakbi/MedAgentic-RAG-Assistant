@@ -47,6 +47,7 @@ class PromptEnhancerV2Service:
                 model_name=self.settings.groq_model_prompt_enhancer,
             )
             candidate = PromptEnhanceV2Response.model_validate({**fallback.model_dump(), **payload})
+            candidate.original_input = fallback.original_input
             return self._enforce_route_constraints(request, candidate, fallback)
         except Exception:
             return fallback
@@ -324,7 +325,6 @@ class PromptEnhancerV2Service:
         if (
             request.target_mode == "auto"
             and not any((has_url, has_document_reference, has_pubmed_reference, has_literature_reference))
-            and (candidate.inferred_mode != "open_literature" or not request.strict_grounding)
         ):
             return fallback
         return candidate

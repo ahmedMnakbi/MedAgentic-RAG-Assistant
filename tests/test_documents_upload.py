@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+from io import BytesIO
 from types import SimpleNamespace
+
+from reportlab.pdfgen import canvas
+
+
+def _text_pdf_bytes(text: str = "Diabetes is a metabolic disease with insulin resistance.") -> bytes:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer)
+    pdf.drawString(72, 720, text)
+    pdf.save()
+    return buffer.getvalue()
 
 
 def _patch_successful_upload(app, monkeypatch):
@@ -49,6 +60,67 @@ def test_upload_document_success(client, app, monkeypatch):
     assert payload["filename"] == "notes.pdf"
     assert payload["page_count"] == 1
     assert payload["chunk_count"] == 1
+
+
+def test_upload_normal_text_pdf_indexes_successfully(client, app, monkeypatch):
+    captured = {}
+
+    def fake_add_documents(documents):
+        captured["documents"] = documents
+
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", fake_add_documents)
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("diabetes_notes.pdf", _text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "indexed"
+    assert payload["chunk_count"] >= 1
+    assert captured["documents"]
+    assert all(value is not None for doc in captured["documents"] for value in doc.metadata.values())
+
+
+def test_upload_vector_failure_degrades_to_text_only_record(client, app, monkeypatch):
+    before = app.state.services.document_service.list_documents()
+    monkeypatch.setattr(
+        app.state.services.document_service.vectorstore_client,
+        "add_documents",
+        lambda _documents: (_ for _ in ()).throw(RuntimeError("vector store unavailable")),
+    )
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("indexing_failure.pdf", _text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "indexed_text_only"
+    after = app.state.services.document_service.list_documents()
+    assert len(after) == len(before) + 1
+
+
+def test_upload_chunking_failure_is_specific_and_preserves_registry(client, app, monkeypatch):
+    before = app.state.services.document_service.list_documents()
+    monkeypatch.setattr(
+        app.state.services.document_service,
+        "_chunk_pages",
+        lambda _pages: (_ for _ in ()).throw(RuntimeError("splitter unavailable")),
+    )
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("chunking_failure.pdf", _text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 502
+    payload = response.json()
+    assert payload["code"] == "external_service_error"
+    assert "chunking step" in payload["error"].lower()
+    assert app.state.services.document_service.list_documents() == before
 
 
 def test_upload_rejects_invalid_extension(client):

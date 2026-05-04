@@ -137,3 +137,117 @@ def test_selected_document_quiz_uses_document_context_for_generic_pdf_prompt(cli
     assert payload["mode_used"] == "quiz"
     assert payload["quiz_items"]
     assert "Diabetes pathophysiology" in captured["context"]
+
+
+def test_selected_document_quiz_falls_back_to_saved_pdf_chunks(client, app, monkeypatch):
+    selected_chunks = [
+        RetrievedChunk(
+            text="Diabetes pathophysiology includes insulin resistance.",
+            metadata={"document_id": "diabetes-doc", "filename": "DIABETES.pdf", "page": 0, "chunk_id": "c1"},
+            score=0.0,
+        )
+    ]
+    monkeypatch.setattr(
+        app.state.services.rag_service,
+        "retrieve_document_chunks",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("chroma unavailable")),
+    )
+    monkeypatch.setattr(
+        app.state.services.document_service,
+        "load_stored_document_chunks",
+        lambda *args, **kwargs: selected_chunks,
+    )
+    monkeypatch.setattr(
+        app.state.services.quiz_service,
+        "generate_context",
+        lambda *args, **kwargs: [
+            QuizItem(
+                question="What is a diabetes mechanism?",
+                options=["Insulin resistance", "Pulmonary shunt"],
+                correct_answer="Insulin resistance",
+                explanation="The selected PDF context mentions insulin resistance.",
+            )
+        ],
+    )
+
+    response = client.post(
+        "/api/chat/ask",
+        json={
+            "question": "Create 5 quiz questions from this PDF.",
+            "mode": "quiz",
+            "document_ids": ["diabetes-doc"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["quiz_items"]
+
+
+def test_selected_document_summarize_and_simplify_use_saved_pdf_chunks(client, app, monkeypatch):
+    selected_chunks = [
+        RetrievedChunk(
+            text="Diabetes mellitus involves chronic hyperglycemia.",
+            metadata={"document_id": "diabetes-doc", "filename": "DIABETES.pdf", "page": 0, "chunk_id": "c1"},
+            score=0.0,
+        )
+    ]
+    monkeypatch.setattr(app.state.services.rag_service, "retrieve_document_chunks", lambda *args, **kwargs: [])
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: selected_chunks)
+    monkeypatch.setattr(
+        app.state.services.summarization_service,
+        "summarize_context",
+        lambda *args, **kwargs: "Summary: diabetes involves chronic hyperglycemia.",
+    )
+    monkeypatch.setattr(
+        app.state.services.simplification_service,
+        "simplify_context",
+        lambda *args, **kwargs: "Simple explanation: diabetes means blood sugar stays high.",
+    )
+
+    summarize_response = client.post(
+        "/api/chat/ask",
+        json={"question": "Summarize this PDF.", "mode": "summarize", "document_ids": ["diabetes-doc"]},
+    )
+    simplify_response = client.post(
+        "/api/chat/ask",
+        json={"question": "Explain this PDF simply.", "mode": "simplify", "document_ids": ["diabetes-doc"]},
+    )
+
+    assert summarize_response.status_code == 200
+    assert summarize_response.json()["status"] == "ok"
+    assert simplify_response.status_code == 200
+    assert simplify_response.json()["status"] == "ok"
+
+
+def test_auto_uploaded_pdf_question_falls_back_cleanly_when_vectorstore_fails(client, app, monkeypatch):
+    fallback_chunks = [
+        RetrievedChunk(
+            text="Diabetes pathophysiology includes insulin resistance and beta cell dysfunction.",
+            metadata={"document_id": "diabetes-doc", "filename": "DIABETES.pdf", "page": 0, "chunk_id": "c1"},
+            score=0.0,
+        )
+    ]
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [object()])
+    monkeypatch.setattr(
+        app.state.services.rag_service,
+        "retrieve",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("chroma unavailable")),
+    )
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: fallback_chunks)
+    monkeypatch.setattr(
+        app.state.services.answer_service,
+        "answer",
+        lambda *args, **kwargs: "The uploaded PDF describes diabetes as involving insulin resistance and beta cell dysfunction.",
+    )
+
+    response = client.post(
+        "/api/chat/ask",
+        json={"question": "What does the uploaded PDF say about diabetes?", "mode": "auto"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["mode_used"] == "document_rag"

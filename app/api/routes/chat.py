@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Request
@@ -155,16 +156,11 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             )
 
     use_selected_document_context = bool(payload.document_ids) and mode in {"summarize", "simplify", "quiz"}
-    if use_selected_document_context:
-        retrieved_chunks: list[RetrievedChunk] = services.rag_service.retrieve_document_chunks(
-            document_ids=payload.document_ids
-        )
-    else:
-        retrieved_chunks = services.rag_service.retrieve(
-            payload.question,
-            top_k=payload.top_k,
-            document_ids=payload.document_ids,
-        )
+    retrieved_chunks = _retrieve_document_chunks_for_chat(
+        services,
+        payload,
+        use_full_selected_context=use_selected_document_context,
+    )
     if not retrieved_chunks:
         return _build_no_source_response(
             payload,
@@ -313,3 +309,50 @@ def _post_process_answer(services: SimpleNamespace, answer: str) -> tuple[str, l
         ["The generated answer was blocked by the post-generation safety checker."],
         True,
     )
+
+
+def _retrieve_document_chunks_for_chat(
+    services: SimpleNamespace,
+    payload: AskRequest,
+    *,
+    use_full_selected_context: bool,
+) -> list[RetrievedChunk]:
+    try:
+        if use_full_selected_context:
+            chunks = services.rag_service.retrieve_document_chunks(document_ids=payload.document_ids)
+            if chunks:
+                return chunks
+        else:
+            chunks = services.rag_service.retrieve(
+                payload.question,
+                top_k=payload.top_k,
+                document_ids=payload.document_ids,
+            )
+            if chunks:
+                return chunks
+    except Exception:
+        chunks = []
+
+    if use_full_selected_context:
+        return services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
+    if services.router_service.references_uploaded_documents(payload.question.lower()):
+        chunks = services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
+        return _rank_fallback_chunks(payload.question, chunks, top_k=payload.top_k)
+    return []
+
+
+def _rank_fallback_chunks(question: str, chunks: list[RetrievedChunk], *, top_k: int) -> list[RetrievedChunk]:
+    query_terms = {
+        term
+        for term in re.findall(r"[a-zA-Z][a-zA-Z]{3,}", question.lower())
+        if term not in {"what", "does", "uploaded", "document", "about", "from", "this", "that", "with", "have"}
+    }
+    if not query_terms:
+        return chunks[:top_k]
+    scored = []
+    for chunk in chunks:
+        text = chunk.text.lower()
+        overlap = sum(1 for term in query_terms if term in text)
+        if overlap:
+            scored.append(RetrievedChunk(text=chunk.text, metadata=chunk.metadata, score=float(overlap)))
+    return sorted(scored, key=lambda chunk: chunk.score, reverse=True)[:top_k]
