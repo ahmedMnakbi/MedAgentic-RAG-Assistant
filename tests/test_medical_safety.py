@@ -38,3 +38,13 @@ def test_safety_redirects_possible_emergency():
     assert assessment.allowed is False
     assert assessment.category == "unsafe_triage"
     assert assessment.safe_completion
+
+
+def test_safety_allows_prompt_boilerplate_that_blocks_personalized_treatment():
+    assessment = SafetyService().assess(
+        "Task: Explain diabetes pathophysiology for a medical student.\n"
+        "Safety plan: Do not recommend personalized treatment or diagnosis."
+    )
+
+    assert assessment.allowed is True
+    assert assessment.category == "safe_educational"

@@ -154,11 +154,17 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
                 enhanced_prompt=enhanced_prompt,
             )
 
-    retrieved_chunks: list[RetrievedChunk] = services.rag_service.retrieve(
-        payload.question,
-        top_k=payload.top_k,
-        document_ids=payload.document_ids,
-    )
+    use_selected_document_context = bool(payload.document_ids) and mode in {"summarize", "simplify", "quiz"}
+    if use_selected_document_context:
+        retrieved_chunks: list[RetrievedChunk] = services.rag_service.retrieve_document_chunks(
+            document_ids=payload.document_ids
+        )
+    else:
+        retrieved_chunks = services.rag_service.retrieve(
+            payload.question,
+            top_k=payload.top_k,
+            document_ids=payload.document_ids,
+        )
     if not retrieved_chunks:
         return _build_no_source_response(
             payload,
@@ -182,9 +188,17 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
 
     sources = services.rag_service.to_source_refs(retrieved_chunks)
     if mode == "summarize":
-        answer = services.summarization_service.summarize(
-            payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
-        )
+        if use_selected_document_context:
+            answer = services.summarization_service.summarize_context(
+                payload.question,
+                packed_context.text,
+                enhanced_prompt=enhanced_prompt,
+                context_label="Selected document context",
+            )
+        else:
+            answer = services.summarization_service.summarize(
+                payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
+            )
         answer, post_warnings, refused = _post_process_answer(services, answer)
         if refused:
             return AskResponse(
@@ -206,9 +220,17 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         )
 
     if mode == "simplify":
-        answer = services.simplification_service.simplify(
-            payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
-        )
+        if use_selected_document_context:
+            answer = services.simplification_service.simplify_context(
+                payload.question,
+                packed_context.text,
+                enhanced_prompt=enhanced_prompt,
+                context_label="Selected document context",
+            )
+        else:
+            answer = services.simplification_service.simplify(
+                payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
+            )
         answer, post_warnings, refused = _post_process_answer(services, answer)
         if refused:
             return AskResponse(
@@ -230,9 +252,17 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         )
 
     if mode == "quiz":
-        quiz_items = services.quiz_service.generate(
-            payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
-        )
+        if use_selected_document_context:
+            quiz_items = services.quiz_service.generate_context(
+                payload.question,
+                packed_context.text,
+                enhanced_prompt=enhanced_prompt,
+                context_label="Selected document context",
+            )
+        else:
+            quiz_items = services.quiz_service.generate(
+                payload.question, retrieved_chunks, enhanced_prompt=enhanced_prompt
+            )
         return AskResponse(
             status="ok",
             mode_used="quiz",

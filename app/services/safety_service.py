@@ -114,7 +114,7 @@ class SafetyService:
                 level="level_3",
                 safe_completion=self.safe_completion(question, "unsafe_diagnosis"),
             )
-        if self._matches_any(question, self.personalized_treatment_patterns):
+        if self._matches_any(self._strip_safety_boilerplate(question), self.personalized_treatment_patterns):
             return SafetyAssessment(
                 allowed=False,
                 category="unsafe_personalized_treatment",
@@ -198,6 +198,17 @@ class SafetyService:
     @staticmethod
     def _matches_any(text: str, patterns: list[re.Pattern[str]]) -> bool:
         return any(pattern.search(text) for pattern in patterns)
+
+    @staticmethod
+    def _strip_safety_boilerplate(text: str) -> str:
+        """Ignore safety constraints that mention unsafe categories as things to avoid."""
+        return re.sub(
+            r"\b(?:do not|don't|avoid|without|no|must not|cannot|can't|should not)\b"
+            r"[^.\n;]{0,160}\bpersonalized treatment\b[^.\n;]*",
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        )
 
     def _is_unsafe_dosage_request(self, question: str) -> bool:
         if self._matches_any(question, self.dosage_patterns):

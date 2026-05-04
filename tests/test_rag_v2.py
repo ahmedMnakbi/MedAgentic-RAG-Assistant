@@ -66,3 +66,27 @@ def test_post_safety_checker_catches_unsafe_advice():
 
     assert ok is False
     assert findings
+
+
+def test_post_safety_checker_allows_negated_safety_boilerplate():
+    service = PostSafetyService(SafetyService())
+
+    ok, findings = service.check(
+        "This is educational only, not a diagnosis or personalized treatment advice. "
+        "Diabetes pathophysiology involves impaired insulin secretion and insulin resistance."
+    )
+
+    assert ok is True
+    assert findings == []
+
+
+def test_post_safety_checker_allows_general_disease_education():
+    service = PostSafetyService(SafetyService())
+
+    ok, findings = service.check(
+        "This is a general overview of diabetes pathophysiology for students. "
+        "Diabetes is a metabolic disease category involving insulin resistance or insulin deficiency."
+    )
+
+    assert ok is True
+    assert findings == []

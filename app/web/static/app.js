@@ -571,6 +571,25 @@ function renderPromptEnhanceV2(payload) {
     </article>
   `;
   shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
+  shell.dataset.originalInput = payload.original_input || "";
+  shell.dataset.inferredMode = payload.inferred_mode || "auto";
+}
+
+function setAssistantModeFromEnhancement(inferredMode) {
+  const modeSelect = document.getElementById("chat-mode");
+  const modeMap = {
+    document_rag: "document_rag",
+    rag: "rag",
+    open_literature: "open_literature",
+    pubmed_metadata: "pubmed",
+    pubmed: "pubmed",
+    general_education: "general_education",
+    open_article: "auto",
+  };
+  const nextMode = modeMap[inferredMode] || "auto";
+  if (Array.from(modeSelect.options).some((option) => option.value === nextMode)) {
+    modeSelect.value = nextMode;
+  }
 }
 
 function renderOpenLiterature(payload) {
@@ -983,7 +1002,10 @@ function bindStaticInteractions() {
     }
     const sendButton = event.target.closest("[data-enhanced-to-chat]");
     if (sendButton) {
-      document.getElementById("chat-question").value = document.getElementById("prompt-enhance-v2-result").dataset.optimizedPrompt || "";
+      const resultShell = document.getElementById("prompt-enhance-v2-result");
+      document.getElementById("chat-question").value =
+        resultShell.dataset.originalInput || resultShell.dataset.optimizedPrompt || "";
+      setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || "auto");
       document.getElementById("chat-question").focus();
     }
   });
