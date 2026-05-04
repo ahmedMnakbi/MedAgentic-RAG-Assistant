@@ -444,7 +444,7 @@ function serializeChatPayload() {
     question: document.getElementById("chat-question").value.trim(),
     mode: document.getElementById("chat-mode").value,
     document_ids: documentIds,
-    enhance_prompt: document.getElementById("enhance-prompt-toggle").checked,
+    enhance_prompt: false,
     top_k: Number(document.getElementById("chat-top-k").value),
   };
 }

@@ -20,6 +20,8 @@ def test_root_serves_web_interface(client):
     assert "Refine your own prompt" not in response.text
     assert "Important Note" not in response.text
     assert "Prompt Lab" not in response.text
+    assert "Enhance prompt before execution" not in response.text
+    assert "enhance-prompt-toggle" not in response.text
 
 
 def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_package():
@@ -46,3 +48,5 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "Vector indexed" in script
     assert "Text fallback" in script
     assert "danger-outline-button" in script
+    assert "enhance_prompt: false" in script
+    assert "enhance-prompt-toggle" not in script
