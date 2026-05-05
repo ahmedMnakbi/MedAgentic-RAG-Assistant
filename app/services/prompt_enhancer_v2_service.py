@@ -22,8 +22,27 @@ DOCUMENT_REFERENCE_TERMS = (
 )
 OPEN_ARTICLE_TERMS = ("article url", "specific article", "import article", "analyze this article")
 BLOCKED_SELF_HARM_OR_ABUSE_PATTERNS = (
+    re.compile(r"\bkill myself\b", re.IGNORECASE),
     re.compile(r"\bkill yourself\b", re.IGNORECASE),
+    re.compile(r"\bi want to die\b", re.IGNORECASE),
+    re.compile(r"\bi want to kill myself\b", re.IGNORECASE),
+    re.compile(r"\bhow to kill myself\b", re.IGNORECASE),
+    re.compile(r"\bsuicide\b", re.IGNORECASE),
+    re.compile(r"\bsuicidal\b", re.IGNORECASE),
+    re.compile(r"\bself[- ]?harm\b", re.IGNORECASE),
+    re.compile(r"\bhurt myself\b", re.IGNORECASE),
+    re.compile(r"\bend my life\b", re.IGNORECASE),
+    re.compile(r"\bi took too many pills\b", re.IGNORECASE),
+    re.compile(r"\bhow many pills\b.*\b(die|overdose)\b", re.IGNORECASE),
     re.compile(r"\bkys\b", re.IGNORECASE),
+)
+STANDALONE_OVERDOSE_PATTERN = re.compile(r"^\s*overdose\s*[.?!]?\s*$", re.IGNORECASE)
+URGENT_OVERDOSE_PATTERN = re.compile(
+    r"\b(overdose|poisoning|too many pills|took too many|how many pills)\b", re.IGNORECASE
+)
+EDUCATIONAL_OVERDOSE_PATTERN = re.compile(
+    r"\b(explain|overview|pharmacology|medical students?|medical education|general concept|educational)\b",
+    re.IGNORECASE,
 )
 
 
@@ -287,45 +306,106 @@ class PromptEnhancerV2Service:
     def _medical_education_task(text: str) -> str | None:
         cleaned = normalize_whitespace(text).strip()
         lowered = cleaned.lower().strip(" .?!")
+        topic = PromptEnhancerV2Service._extract_short_topic(lowered)
+        if not topic:
+            return None
+        if "for a medical student" in lowered and len(lowered.split()) > 5:
+            return cleaned
 
-        if lowered in {"diabetes", "diabetes mellitus"}:
+        if topic in {"diabetes", "diabetes mellitus"}:
             return (
                 "Provide a medical-student-level overview of diabetes mellitus, including type 1 and type 2 "
                 "differences, insulin deficiency/resistance, hyperglycemia, common complications, and general "
                 "educational limitations."
             )
-        if lowered in {"what is asthma", "explain asthma", "asthma"}:
+        if topic == "asthma":
             return (
-                "Explain asthma for a medical student, including the basic definition, airway inflammation/"
-                "bronchoconstriction, common triggers, symptoms, general management categories, and a note that "
-                "diagnosis and treatment depend on clinician assessment."
+                "Explain asthma for a medical student, including the basic definition, airway inflammation and "
+                "bronchoconstriction, common triggers, symptoms, general management categories, and why diagnosis "
+                "and treatment depend on clinician assessment."
             )
-        if lowered in {"explain colon cancer", "colon cancer", "what is colon cancer"}:
+        if topic == "colon cancer":
             return (
                 "Provide a general educational explanation of colon cancer for a medical student, including what "
                 "it is, basic pathophysiology, common risk factors, common symptoms, screening concepts, and why "
                 "diagnosis and treatment decisions require a clinician."
             )
-        if "colon cancer" in lowered and "symptom" in lowered:
+        if PromptEnhancerV2Service._is_symptom_or_screening_prompt(lowered):
+            symptom_topic = PromptEnhancerV2Service._topic_without_symptom_words(topic)
             return (
-                "Explain common colon cancer symptoms and screening concepts for educational purposes, and clarify "
+                f"Explain common {symptom_topic} symptoms and screening concepts for educational purposes, and clarify "
                 "that symptoms cannot be used to diagnose a specific person without clinician evaluation."
             )
-        if "hypertension" in lowered and any(term in lowered for term in ("treatment", "treatments", "used", "management")):
+        if PromptEnhancerV2Service._is_treatment_category_prompt(lowered):
+            treatment_topic = PromptEnhancerV2Service._topic_without_treatment_words(topic)
             return (
-                "Explain general treatment categories for hypertension for medical students, including lifestyle "
+                f"Explain general treatment categories for {treatment_topic} for medical students, including lifestyle "
                 "approaches and common medication classes, without recommending a personalized treatment or dosage."
             )
-        short_explain_match = re.match(r"^(?:explain|what is|what are)\s+(.+)$", lowered)
-        if short_explain_match and len(lowered.split()) <= 5:
-            topic = short_explain_match.group(1).strip()
-            if PromptEnhancerV2Service._looks_medical_topic(topic):
-                return (
-                    f"Provide a general educational explanation of {topic} for a medical student, including the "
-                    "basic definition, key mechanisms, common risk factors or symptoms when relevant, general "
-                    "evaluation or prevention concepts, and why diagnosis and treatment decisions require a clinician."
-                )
+        if topic == "depression":
+            return (
+                "Provide a general educational explanation of depression for a medical student, including what it is, "
+                "core symptoms, basic biopsychosocial mechanisms, common risk factors, general screening/assessment "
+                "concepts, broad treatment categories, and why diagnosis and treatment decisions require a qualified clinician."
+            )
+        if topic in {"eating disorders", "eating disorder"}:
+            return (
+                "Provide a general educational explanation of eating disorders for a medical student, including major "
+                "types, core clinical features, medical and psychological risks, general assessment concepts, broad "
+                "treatment/support categories, and why diagnosis and care require qualified professionals."
+            )
+        if topic == "migraine":
+            return (
+                "Provide a general educational explanation of migraine for a medical student, including definition, "
+                "typical features, possible mechanisms, triggers, general management categories, red-flag cautions, "
+                "and clinician-context limitations."
+            )
+        if topic == "anemia":
+            return (
+                "Provide a medical-student-level overview of anemia, including definition, common mechanisms, major "
+                "categories, typical symptoms, basic diagnostic concepts, and why evaluation depends on clinical context."
+            )
+        if PromptEnhancerV2Service._looks_mental_health_topic(topic):
+            return (
+                f"Provide a general educational explanation of {topic} for a medical student, including what it is, "
+                "core symptoms or clinical features, basic biopsychosocial mechanisms, common risk factors, general "
+                "screening/assessment concepts, broad treatment/support categories, and why diagnosis and care require qualified professionals."
+            )
+        if PromptEnhancerV2Service._looks_medical_topic(topic):
+            return (
+                f"Provide a general educational explanation of {topic} for a medical student, including the basic "
+                "definition, key mechanisms, common risk factors or symptoms when relevant, general evaluation or "
+                "prevention concepts, and why diagnosis and treatment decisions require a clinician."
+            )
         return None
+
+    @staticmethod
+    def _extract_short_topic(lowered: str) -> str | None:
+        lowered = normalize_whitespace(lowered).strip(" .?!")
+        match = re.match(r"^(?:please\s+)?(?:explain|what is|what are|overview of|define)\s+(.+)$", lowered)
+        topic = match.group(1).strip() if match else lowered
+        topic = re.sub(r"\bfor (?:a )?(?:medical student|students?|education|educational purposes)\b", "", topic).strip()
+        if not topic or len(topic.split()) > 6:
+            return None
+        return topic
+
+    @staticmethod
+    def _is_symptom_or_screening_prompt(lowered: str) -> bool:
+        return any(term in lowered for term in ("symptom", "symptoms", "screening", "screen"))
+
+    @staticmethod
+    def _is_treatment_category_prompt(lowered: str) -> bool:
+        return any(term in lowered for term in ("treatment", "treatments", "management", "therapy", "used for"))
+
+    @staticmethod
+    def _topic_without_symptom_words(topic: str) -> str:
+        cleaned = re.sub(r"\b(symptoms?|screening|screen)\b", " ", topic, flags=re.IGNORECASE)
+        return normalize_whitespace(cleaned) or topic
+
+    @staticmethod
+    def _topic_without_treatment_words(topic: str) -> str:
+        cleaned = re.sub(r"\b(what|are|is|treatments?|used|for|management|therapy)\b", " ", topic, flags=re.IGNORECASE)
+        return normalize_whitespace(cleaned) or topic
 
     @staticmethod
     def _looks_medical_topic(topic: str) -> bool:
@@ -336,14 +416,61 @@ class PromptEnhancerV2Service:
                 "diabetes",
                 "asthma",
                 "hypertension",
+                "migraine",
+                "anemia",
+                "anaemia",
+                "depression",
+                "anxiety",
+                "disorder",
                 "disease",
                 "syndrome",
                 "infection",
-                "anemia",
+                "pain",
+                "symptom",
+                "screening",
+                "blood pressure",
+                "cholesterol",
+                "obesity",
+                "allergy",
+                "arthritis",
+                "sepsis",
+                "pneumonia",
+                "bronchitis",
+                "copd",
+                "epilepsy",
+                "migraine",
+                "headache",
+                "thyroid",
+                "liver",
+                "colon",
+                "bowel",
+                "breast",
+                "skin",
+                "mental health",
                 "stroke",
                 "kidney",
                 "heart",
                 "lung",
+            )
+        )
+
+    @staticmethod
+    def _looks_mental_health_topic(topic: str) -> bool:
+        return any(
+            term in topic.lower()
+            for term in (
+                "depression",
+                "anxiety",
+                "eating disorder",
+                "bipolar",
+                "schizophrenia",
+                "ptsd",
+                "ocd",
+                "adhd",
+                "autism",
+                "substance use",
+                "addiction",
+                "panic disorder",
             )
         )
 
@@ -358,6 +485,12 @@ class PromptEnhancerV2Service:
         strict_grounding: bool,
         full_text_required: bool,
     ) -> str:
+        if inferred_mode == "unsafe_refusal":
+            return (
+                f"Request blocked\n\n"
+                f"Message: {optimized_task}\n"
+                "Reason: unsafe request; not suitable for MARA execution."
+            )
         audience_line = audience or "medical students"
         grounding_line = "Use only retrieved/cited source context; say when evidence is insufficient." if strict_grounding else "Prefer retrieved context and label uncertainty."
         full_text_line = "Require usable full text; do not claim full text was used for abstract-only records." if full_text_required else "Label each source as full text, abstract only, metadata only, or restricted."
@@ -457,6 +590,10 @@ class PromptEnhancerV2Service:
     def _blocked_prompt_category(raw: str, safety_category: str) -> str | None:
         if any(pattern.search(raw) for pattern in BLOCKED_SELF_HARM_OR_ABUSE_PATTERNS):
             return "unsafe_self_harm_or_abusive"
+        if STANDALONE_OVERDOSE_PATTERN.search(raw):
+            return "unsafe_overdose_or_poisoning"
+        if URGENT_OVERDOSE_PATTERN.search(raw) and not EDUCATIONAL_OVERDOSE_PATTERN.search(raw):
+            return "unsafe_overdose_or_poisoning"
         if safety_category in {
             "unsafe_diagnosis",
             "unsafe_dosage",
@@ -474,6 +611,11 @@ class PromptEnhancerV2Service:
                 "If this is about you or someone else being in immediate danger, contact local emergency services "
                 "or a crisis hotline now."
             )
+        if category == "unsafe_overdose_or_poisoning":
+            return (
+                "If this is about a possible overdose or poisoning, contact emergency services or a poison control "
+                "center immediately. MARA will not create or send this as an executable prompt."
+            )
         if category == "unsafe_diagnosis":
             return "This request asks for diagnosis of a specific person, so MARA will not send it as an executable task."
         if category == "unsafe_dosage":
@@ -484,7 +626,7 @@ class PromptEnhancerV2Service:
 
     @staticmethod
     def _blocked_warning(category: str) -> str:
-        if category == "unsafe_self_harm_or_abusive":
+        if category in {"unsafe_self_harm_or_abusive", "unsafe_overdose_or_poisoning"}:
             return "This request was blocked because it is not a safe medical-learning task."
         return "This unsafe clinical request was blocked instead of being sent to Assistant Lab."
 

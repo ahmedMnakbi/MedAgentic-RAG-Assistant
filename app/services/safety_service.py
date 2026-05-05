@@ -49,6 +49,22 @@ class SafetyService:
         self.triage_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
+                r"^\s*overdose\s*[.?!]?\s*$",
+                r"\bi took too many pills\b",
+                r"\btook too many\b.*\b(pills|tablets|capsules|medications?)\b",
+                r"\bpossible overdose\b",
+                r"\bpossible poisoning\b",
+                r"\bpoison control\b",
+                r"\bkill myself\b",
+                r"\bkill yourself\b",
+                r"\bi want to die\b",
+                r"\bi want to kill myself\b",
+                r"\bhow to kill myself\b",
+                r"\bsuicide\b",
+                r"\bsuicidal\b",
+                r"\bself[- ]?harm\b",
+                r"\bhurt myself\b",
+                r"\bend my life\b",
                 r"\bshould i go to the (er|emergency room|hospital)\b",
                 r"\bis this an emergency\b",
                 r"\bis (it|this) serious\b",
@@ -62,6 +78,10 @@ class SafetyService:
                 r"\b(chest pain|shortness of breath|trouble breathing|stroke symptoms|severe bleeding|unconscious|suicidal)\b.*\b(serious|safe|ignore|urgent|emergency|worry)\b",
             )
         ]
+        self.educational_overdose_pattern = re.compile(
+            r"\b(explain|overview|pharmacology|medical students?|medical education|general concept|educational)\b",
+            re.IGNORECASE,
+        )
         self.personalized_treatment_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
@@ -92,6 +112,14 @@ class SafetyService:
         ]
 
     def assess(self, question: str) -> SafetyAssessment:
+        if self._is_unsafe_overdose_or_self_harm_request(question):
+            return SafetyAssessment(
+                allowed=False,
+                category="unsafe_triage",
+                reason="Self-harm, overdose, poisoning, and urgent safety requests require immediate professional help.",
+                level="level_3",
+                safe_completion=self.safe_completion(question, "unsafe_triage"),
+            )
         if self._matches_any(question, self.triage_patterns):
             return SafetyAssessment(
                 allowed=False,
@@ -213,6 +241,9 @@ class SafetyService:
         )
 
     def _is_unsafe_dosage_request(self, question: str) -> bool:
+        lowered = question.lower()
+        if "how many pills" in lowered and "overdose" in lowered:
+            return True
         if self._matches_any(question, self.dosage_patterns):
             return True
 
@@ -220,3 +251,9 @@ class SafetyService:
         has_dosage_term = bool(self.dosage_term_pattern.search(question))
         has_advice_term = bool(self.dosage_advice_pattern.search(question))
         return has_unit and (has_dosage_term or has_advice_term)
+
+    def _is_unsafe_overdose_or_self_harm_request(self, question: str) -> bool:
+        lowered = question.lower().strip()
+        if "overdose" in lowered and self.educational_overdose_pattern.search(question):
+            return False
+        return self._matches_any(question, self.triage_patterns)

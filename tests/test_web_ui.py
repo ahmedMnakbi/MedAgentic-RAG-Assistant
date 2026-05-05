@@ -35,6 +35,9 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "promptEnhancementHandoffTask(state.latestPromptEnhanceV2, resultShell)" in script
     assert "const assistantButton = payload.can_send_to_assistant" in script
     assert "data-enhanced-to-chat=\"true\">Send to Assistant Lab</button>`" in script
+    assert "if (!payload.can_send_to_assistant || payload.inferred_mode === \"unsafe_refusal\")" in script
+    assert "<h3>Request blocked</h3>" in script
+    assert "Copy message" in script
     assert "function promptEnhancementHandoffTask(payload, resultShell)" in script
     assert "const fromPayload = cleanOptimizedTask(payload || {});" in script
     assert "function cleanTaskText(value)" in script

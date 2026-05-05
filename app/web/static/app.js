@@ -640,6 +640,34 @@ function renderPromptEnhanceV2(payload) {
   const assistantButton = payload.can_send_to_assistant
     ? `<button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>`
     : "";
+  if (!payload.can_send_to_assistant || payload.inferred_mode === "unsafe_refusal") {
+    shell.innerHTML = `
+      <article class="result-card">
+        <div class="result-topline">
+          <span class="mode-badge">${escapeHtml(payload.inferred_mode || "unsafe_refusal")}</span>
+          <span class="mode-badge">blocked</span>
+        </div>
+        <h3>Request blocked</h3>
+        <div class="answer-body">${escapeHtml(payload.optimized_task || "MARA cannot create or send this request.")}</div>
+        ${(payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("")}
+        <div class="inline-actions">
+          <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_task || "")}">Copy message</button>
+        </div>
+      </article>
+      <details class="result-card">
+        <summary>Raw JSON</summary>
+        <div class="prompt-template mono">${escapeHtml(JSON.stringify(payload, null, 2))}</div>
+      </details>
+    `;
+    shell.dataset.optimizedTask = optimizedTask;
+    shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
+    shell.dataset.originalInput = payload.original_input || "";
+    shell.dataset.inferredMode = payload.inferred_mode || "unsafe_refusal";
+    shell.dataset.openLiteratureQuery = "";
+    shell.dataset.fullTextRequired = String(inferFullTextRequired(payload));
+    shell.dataset.outputFormat = payload.output_format || "markdown";
+    return;
+  }
   shell.innerHTML = `
     <article class="result-card">
       <div class="result-topline">

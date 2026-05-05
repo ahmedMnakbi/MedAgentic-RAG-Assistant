@@ -186,7 +186,7 @@ def test_prompt_enhance_v2_expands_short_colon_cancer_prompt(client):
 
 
 def test_prompt_enhance_v2_expands_short_asthma_prompt(client):
-    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "what is asthma"})
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "explain asthma"})
 
     task = response.json()["optimized_task"].lower()
     assert "airway inflammation" in task
@@ -246,6 +246,56 @@ def test_prompt_enhance_v2_blocks_diagnosis_and_triage_prompts(client):
     assert diagnosis["inferred_mode"] == "unsafe_refusal"
     assert triage["can_send_to_assistant"] is False
     assert triage["inferred_mode"] == "unsafe_refusal"
+
+
+def test_prompt_enhance_v2_expands_depression_and_eating_disorders(client):
+    depression = client.post("/api/prompts/enhance-v2", json={"raw_input": "explain depression"}).json()
+    eating_disorders = client.post("/api/prompts/enhance-v2", json={"raw_input": "explain eating disorders"}).json()
+
+    assert depression["can_send_to_assistant"] is True
+    assert "biopsychosocial mechanisms" in depression["optimized_task"].lower()
+    assert "screening/assessment" in depression["optimized_task"].lower()
+    assert "qualified clinician" in depression["optimized_task"].lower()
+    assert eating_disorders["can_send_to_assistant"] is True
+    assert "major types" in eating_disorders["optimized_task"].lower()
+    assert "medical and psychological risks" in eating_disorders["optimized_task"].lower()
+    assert "qualified professionals" in eating_disorders["optimized_task"].lower()
+
+
+def test_prompt_enhance_v2_expands_migraine_and_anemia(client):
+    migraine = client.post("/api/prompts/enhance-v2", json={"raw_input": "what is migraine"}).json()
+    anemia = client.post("/api/prompts/enhance-v2", json={"raw_input": "anemia"}).json()
+
+    assert "typical features" in migraine["optimized_task"].lower()
+    assert "red-flag cautions" in migraine["optimized_task"].lower()
+    assert "common mechanisms" in anemia["optimized_task"].lower()
+    assert "major categories" in anemia["optimized_task"].lower()
+
+
+def test_prompt_enhance_v2_blocks_self_harm_variants_and_overdose(client):
+    blocked_inputs = [
+        "kill myself",
+        "I want to die",
+        "overdose",
+        "I took too many pills",
+        "How many pills cause overdose",
+    ]
+
+    for raw_input in blocked_inputs:
+        payload = client.post("/api/prompts/enhance-v2", json={"raw_input": raw_input}).json()
+        assert payload["can_send_to_assistant"] is False
+        assert payload["inferred_mode"] == "unsafe_refusal"
+        assert "Instructions:" not in payload["optimized_prompt"]
+
+
+def test_prompt_enhance_v2_allows_educational_overdose_pharmacology(client):
+    payload = client.post(
+        "/api/prompts/enhance-v2",
+        json={"raw_input": "Explain overdose pharmacology for medical students"},
+    ).json()
+
+    assert payload["can_send_to_assistant"] is True
+    assert payload["inferred_mode"] == "general_education"
 
 
 def test_old_prompt_improve_still_works(client):
