@@ -4,7 +4,7 @@
 
 MARA is **educational only**. It is not a diagnosis, dosage, emergency triage, personalized treatment, or clinical decision-support system.
 
-The `ahmed/mara-genai-upgrade` branch is the `v2.0` release candidate. It keeps the original FastAPI backend, web UI at `/`, Swagger at `/docs`, Chroma-based document RAG, PubMed workflows, URL import compatibility, and prompt endpoints while adding safer routing, stronger RAG infrastructure, Open Literature, Open Article, and MARA Prompt Builder.
+The current `main` branch includes the `v2.1.1` patch release. It keeps the original FastAPI backend, web UI at `/`, Swagger at `/docs`, Chroma-based document RAG, PubMed workflows, URL import compatibility, and prompt endpoints while adding safer routing, stronger RAG infrastructure, Open Literature, Open Article, MARA Prompt Builder, medical-scope document gating, and safer prompt/document workflows.
 
 ## Quickstart
 
@@ -13,14 +13,16 @@ The `ahmed/mara-genai-upgrade` branch is the `v2.0` release candidate. It keeps 
 ```powershell
 git clone https://github.com/ahmedMnakbi/MedAgentic-RAG-Assistant.git
 cd MedAgentic-RAG-Assistant
+py start_local.py
+```
+
+Alternate command if `python` is mapped correctly:
+
+```powershell
 python start_local.py
 ```
 
-If Windows opens the Microsoft Store when you type `python`, use:
-
-```powershell
-py start_local.py
-```
+If Windows opens the Microsoft Store when you type `python`, use `py start_local.py`, install Python from [python.org](https://www.python.org/downloads/), or disable the Windows App Execution Alias for `python.exe`.
 
 ### macOS/Linux
 
@@ -83,9 +85,16 @@ The app should still start without a Groq key. Features that need live generatio
 - Extract PDF text for study workflows.
 - Index chunks into Chroma/vectorstore when available.
 - Fall back to direct PDF text workflows when vector indexing is unavailable.
+- Classify uploaded documents for MARA's medical education scope.
 - Show indexed documents with status labels:
   - `Vector indexed`
   - `Text fallback`
+- Show scope labels:
+  - `Medical`
+  - `Medical-adjacent`
+  - `Out of scope`
+  - `Unknown / not verified`
+- Exclude out-of-scope and unverified documents from medical workflows while still allowing deletion.
 - Detect duplicate uploads by document hash.
 - Delete indexed documents, including registry metadata, saved PDF/fallback text, and Chroma entries when vectorstore deletion is available.
 - Keep deletion graceful: vector cleanup warnings should not crash local metadata cleanup.
@@ -95,6 +104,7 @@ The app should still start without a Groq key. Features that need live generatio
 - Answer general safe medical education questions.
 - Route uploaded-document requests to document RAG.
 - Support selected-document workflows.
+- Support search-all workflows that cover all eligible medical documents and clearly report skipped out-of-scope/unverified documents.
 - Generate:
   - document-grounded answers
   - summaries
@@ -103,6 +113,7 @@ The app should still start without a Groq key. Features that need live generatio
 - Include source citations when chunks or selected document context are available.
 - Return clean `no_source` responses when document context is unavailable.
 - Refuse or redirect diagnosis, dosage, emergency triage, and personalized treatment requests before generation.
+- Refuse clearly non-medical requests instead of acting like a general chatbot.
 
 Assistant Lab runs the request as written. Prompt improvement is handled explicitly through MARA Prompt Builder, not through hidden prompt rewriting.
 
@@ -126,8 +137,10 @@ It returns:
 Handoffs:
 
 - Send to Assistant Lab uses `optimized_task`, not the raw messy input or full harness package.
+- General-education handoff unchecks `Search all uploaded documents` so the UI does not imply document retrieval.
 - Send to Open Literature uses the cleaned `open_literature_query`.
 - Send to Open Article uses the detected article URL/instruction.
+- Unsafe, self-harm, lethal-dose, overdose, and clearly non-medical prompt packages are blocked and are not sendable to Assistant Lab.
 
 ### Open Literature
 
@@ -217,14 +230,34 @@ Refused or redirected:
 
 - diagnosing a specific person
 - medication dosage, dosage adjustment, starting, or stopping medication
+- lethal-dose or self-harm-enabling information
 - emergency triage or reassurance about severe symptoms
 - deciding whether symptoms are safe to ignore
 - replacing medical consultation
 - interpreting user-specific labs as a diagnosis
 - pediatric, pregnancy, severe symptom, or emergency scenarios requiring urgent care
 - dangerous self-treatment instructions
+- clearly non-medical requests that do not belong in MARA's medical education scope
 
 Safety is applied before generation. Post-generation and grounding checks are also present/configurable in the v2 infrastructure, but disclaimers alone are not treated as sufficient safety.
+
+High-level toxicology and overdose education can be allowed when it is clearly framed for medical learning and avoids lethal-dose details, self-harm instructions, and actionable dosing guidance. Suspected overdose, poisoning, self-harm, or urgent-symptom requests are refused or redirected to urgent professional help.
+
+## Release Notes
+
+### v2.1.1
+
+- Added stricter medical-scope gating for uploaded documents and user prompts.
+- Blocks non-medical documents/prompts from MARA medical workflows while preserving document deletion.
+- Improved Search All document workflows so generic summarize/quiz/simplify requests cover every eligible medical document and list skipped ineligible sources.
+- Expanded MARA Prompt Builder `optimized_task` generation for short medical and mental-health learning prompts.
+- Blocks unsafe Prompt Builder packages, including self-harm, overdose/poisoning, lethal-dose, dosage, triage, diagnosis, and non-medical requests.
+- Improved lethal-dose and overdose safety while allowing high-level toxicology education with explicit safety constraints.
+- Cleaned Prompt Builder general-education handoff so `Search all uploaded documents` is unchecked when the route is `general_education`.
+
+### v2.1.0
+
+- Introduced MARA's broader Generative AI upgrade: Prompt Builder v2, Open Literature, Open Article, stronger RAG infrastructure, document deletion, local launcher, and refined educational safety boundaries.
 
 ## High-Level Architecture
 
@@ -395,7 +428,7 @@ pytest
 
 Current release-candidate baseline:
 
-- `110 passed`
+- `171 passed`
 
 Useful smoke tests:
 
@@ -410,7 +443,7 @@ Useful smoke tests:
 
 ## Demo Workflow
 
-1. Start with `python start_local.py`.
+1. Start with `py start_local.py` on Windows, or `python start_local.py` / `python3 start_local.py` where appropriate.
 2. Open the app at `/` and show Swagger at `/docs`.
 3. Upload a text-based medical PDF in Document Dock.
 4. Show duplicate handling by uploading the same PDF again.
@@ -450,10 +483,11 @@ start_local.py             # cross-platform local launcher
 - Cureus is treated cautiously/restricted by default unless a clearly allowed source is available or the project owner enables experimental handling.
 - Chroma/vector indexing may fail in local environments; MARA can fall back to text-only selected-document workflows.
 - OCR/scanned PDFs may be limited if OCR support is not installed/enabled.
+- Some non-English or math-heavy PDFs may fail parsing instead of being classified out of scope.
 - Heavy rerankers, stronger embedding models, and LangGraph orchestration are optional/configured paths, not required for the local demo.
 - No authentication, multi-user accounts, deployment pipeline, or medical-device validation.
 
-## Good Next Steps After v2.0
+## Good Next Steps After v2.1.1
 
 - Add richer browser E2E coverage.
 - Add optional OCR setup for scanned PDFs.
