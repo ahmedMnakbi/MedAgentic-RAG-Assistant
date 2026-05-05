@@ -26,10 +26,10 @@ def _record(
     )
 
 
-def _chunk(document_id: str, filename: str, text: str) -> RetrievedChunk:
+def _chunk(document_id: str, filename: str, text: str, *, page: int = 0, chunk_id: str | None = None) -> RetrievedChunk:
     return RetrievedChunk(
         text=text,
-        metadata={"document_id": document_id, "filename": filename, "page": 0, "chunk_id": f"{document_id}_chunk_1"},
+        metadata={"document_id": document_id, "filename": filename, "page": page, "chunk_id": chunk_id or f"{document_id}_chunk_1"},
         score=0.0,
     )
 
@@ -158,7 +158,7 @@ def test_search_all_excludes_non_medical_documents(client, app, monkeypatch):
             _record("automata-doc", filename="automata.pdf", scope_category="non_medical", eligible=False),
         ],
     )
-    monkeypatch.setattr(app.state.services.rag_service, "retrieve_document_chunks", lambda *args, **kwargs: chunks)
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: chunks)
 
     def summarize_context(question, context, **kwargs):
         captured["context"] = context
@@ -175,6 +175,7 @@ def test_search_all_excludes_non_medical_documents(client, app, monkeypatch):
     assert payload["status"] == "ok"
     assert "insulin resistance" in captured["context"]
     assert "formal grammar" not in captured["context"]
+    assert "automata.pdf" in payload["answer"]
     assert any("Skipped 1 document" in warning and "not verified as medical-scope" in warning for warning in payload["warnings"])
 
 
@@ -192,7 +193,7 @@ def test_search_all_excludes_unknown_documents(client, app, monkeypatch):
             _record("unknown-doc", filename="unknown.pdf", scope_category="unknown_unverified", eligible=False),
         ],
     )
-    monkeypatch.setattr(app.state.services.rag_service, "retrieve_document_chunks", lambda *args, **kwargs: chunks)
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: chunks)
 
     def summarize_context(question, context, **kwargs):
         captured["context"] = context
@@ -268,3 +269,101 @@ def test_deleted_or_stale_docs_are_not_retrieved_in_search_all(client, app, monk
     )
 
     assert response.json()["status"] == "no_source"
+
+
+def test_search_all_summarize_includes_each_eligible_document(client, app, monkeypatch):
+    records = [
+        _record("diabetes-doc", filename="DIABETES.pdf"),
+        _record("medicine-notes", filename="Undergraduate Medicine Study Notes.pdf", scope_category="medical_adjacent"),
+        _record("covid-doc", filename="update-28-covid-19-what-we-know.pdf"),
+        _record("programming-doc", filename="prog_C.pdf", scope_category="non_medical", eligible=False),
+        _record("language-doc", filename="Cours_Theorie_des_Langages.pdf", scope_category="non_medical", eligible=False),
+    ]
+    chunks = [
+        *[
+            _chunk("diabetes-doc", "DIABETES.pdf", f"Diabetes chunk {index} discusses insulin and hyperglycemia.", chunk_id=f"d_{index}")
+            for index in range(8)
+        ],
+        *[
+            _chunk(
+                "medicine-notes",
+                "Undergraduate Medicine Study Notes.pdf",
+                f"Medicine notes chunk {index} covers clinical physiology and patient assessment.",
+                chunk_id=f"m_{index}",
+            )
+            for index in range(8)
+        ],
+        _chunk("covid-doc", "update-28-covid-19-what-we-know.pdf", "COVID-19 update covers infection, transmission, and respiratory disease."),
+        _chunk("programming-doc", "prog_C.pdf", "Programming content about arrays and pointers."),
+        _chunk("language-doc", "Cours_Theorie_des_Langages.pdf", "Automata and formal languages content."),
+    ]
+    captured = {}
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: records)
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: chunks)
+
+    def summarize_context(question, context, **kwargs):
+        captured["context"] = context
+        return "Combined medical summary."
+
+    monkeypatch.setattr(app.state.services.summarization_service, "summarize_context", summarize_context)
+
+    response = client.post(
+        "/api/chat/ask",
+        json={"question": "Summarize the uploaded PDF document.", "mode": "summarize", "document_ids": None},
+    )
+
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "DIABETES.pdf" in payload["answer"]
+    assert "Undergraduate Medicine Study Notes.pdf" in payload["answer"]
+    assert "update-28-covid-19-what-we-know.pdf" in payload["answer"]
+    assert "prog_C.pdf" in payload["answer"]
+    assert "Cours_Theorie_des_Langages.pdf" in payload["answer"]
+    assert "insulin and hyperglycemia" in captured["context"]
+    assert "clinical physiology" in captured["context"]
+    assert "COVID-19 update" in captured["context"]
+    assert "Programming content" not in captured["context"]
+    assert "Automata and formal languages" not in captured["context"]
+
+
+def test_search_all_quiz_context_covers_multiple_eligible_documents(client, app, monkeypatch):
+    records = [
+        _record("diabetes-doc", filename="DIABETES.pdf"),
+        _record("covid-doc", filename="update-28-covid-19-what-we-know.pdf"),
+        _record("language-doc", filename="Cours_Theorie_des_Langages.pdf", scope_category="non_medical", eligible=False),
+    ]
+    chunks = [
+        _chunk("diabetes-doc", "DIABETES.pdf", "Diabetes material mentions insulin resistance."),
+        _chunk("covid-doc", "update-28-covid-19-what-we-know.pdf", "COVID material mentions viral respiratory infection."),
+        _chunk("language-doc", "Cours_Theorie_des_Langages.pdf", "Formal grammar material."),
+    ]
+    captured = {}
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: records)
+    monkeypatch.setattr(app.state.services.document_service, "load_stored_document_chunks", lambda *args, **kwargs: chunks)
+
+    def generate_context(question, context, **kwargs):
+        captured["context"] = context
+        return [
+            QuizItem(
+                question="Which diabetes mechanism is mentioned?",
+                options=["Insulin resistance"],
+                correct_answer="Insulin resistance",
+                explanation="The diabetes source mentions insulin resistance.",
+            )
+        ]
+
+    monkeypatch.setattr(app.state.services.quiz_service, "generate_context", generate_context)
+
+    response = client.post(
+        "/api/chat/ask",
+        json={"question": "Create 5 quiz questions from the uploaded documents.", "mode": "quiz", "document_ids": None},
+    )
+
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["quiz_items"]
+    assert "DIABETES.pdf" in payload["answer"]
+    assert "update-28-covid-19-what-we-know.pdf" in payload["answer"]
+    assert "insulin resistance" in captured["context"]
+    assert "viral respiratory infection" in captured["context"]
+    assert "Formal grammar" not in captured["context"]

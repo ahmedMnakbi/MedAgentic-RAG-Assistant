@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from app.schemas.chat import AskRequest, AskResponse
 from app.schemas.open_literature import OpenLiteratureSearchRequest
 from app.services.rag_service import RetrievedChunk
+from app.utils.text import normalize_whitespace, strip_unsafe_guidance
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -202,6 +203,20 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
     use_direct_document_context = mode in {"summarize", "simplify", "quiz"} and (
         bool(payload.document_ids) or services.router_service.references_uploaded_documents(payload.question.lower())
     )
+    if _is_search_all_direct_workflow(services, payload, mode):
+        response = _run_search_all_direct_workflow(
+            services,
+            payload,
+            safety,
+            mode=mode,
+            scope_state=scope_state,
+            base_warnings=base_warnings,
+            scope_warnings=scope_warnings,
+            enhanced_prompt=enhanced_prompt,
+        )
+        if response is not None:
+            return response
+
     retrieved_chunks = _retrieve_document_chunks_for_chat(
         services,
         payload,
@@ -357,6 +372,237 @@ def _post_process_answer(services: SimpleNamespace, answer: str) -> tuple[str, l
     )
 
 
+def _is_search_all_direct_workflow(services: SimpleNamespace, payload: AskRequest, mode: str) -> bool:
+    return (
+        payload.document_ids is None
+        and mode in {"summarize", "simplify", "quiz"}
+        and services.router_service.references_uploaded_documents(payload.question.lower())
+    )
+
+
+def _run_search_all_direct_workflow(
+    services: SimpleNamespace,
+    payload: AskRequest,
+    safety,
+    *,
+    mode: str,
+    scope_state: dict,
+    base_warnings: list[str],
+    scope_warnings: list[str],
+    enhanced_prompt: str | None,
+) -> AskResponse | None:
+    eligible_records = scope_state["eligible_records"]
+    eligible_ids = [getattr(record, "document_id") for record in eligible_records if getattr(record, "document_id", None)]
+    if not eligible_ids:
+        answer = (
+            "No eligible medical documents are available for this workflow. "
+            "MARA can only use uploaded sources that are medical, health-learning, or medical-adjacent."
+        )
+        return AskResponse(
+            status="no_source",
+            mode_used=mode,
+            answer=answer,
+            safety=safety,
+            enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings + scope_warnings,
+        )
+
+    chunks = _filter_registered_chunks(
+        services,
+        services.document_service.load_stored_document_chunks(document_ids=eligible_ids),
+    )
+    document_context, representative_chunks, workflow_warnings = _build_search_all_document_context(
+        services,
+        eligible_records,
+        chunks,
+    )
+    if not document_context:
+        return _build_no_source_response(
+            payload,
+            safety,
+            mode_used=mode,
+            enhanced_prompt=enhanced_prompt,
+        )
+
+    header = _build_search_all_inventory_header(scope_state, workflow_warnings)
+    sources = services.rag_service.to_source_refs(representative_chunks)
+    warnings = base_warnings + scope_warnings + workflow_warnings
+
+    if mode == "summarize":
+        answer = services.summarization_service.summarize_context(
+            payload.question,
+            document_context,
+            enhanced_prompt=enhanced_prompt,
+            context_label="Representative context from all eligible uploaded documents",
+        )
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                sources=sources,
+                warnings=base_warnings + post_warnings,
+            )
+        return AskResponse(
+            status="ok",
+            mode_used="summarize",
+            answer=f"{header}\n\n{answer}",
+            safety=safety,
+            sources=sources,
+            enhanced_prompt=enhanced_prompt,
+            warnings=warnings + post_warnings,
+        )
+
+    if mode == "simplify":
+        answer = services.simplification_service.simplify_context(
+            payload.question,
+            document_context,
+            enhanced_prompt=enhanced_prompt,
+            context_label="Representative context from all eligible uploaded documents",
+        )
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                sources=sources,
+                warnings=base_warnings + post_warnings,
+            )
+        return AskResponse(
+            status="ok",
+            mode_used="simplify",
+            answer=f"{header}\n\n{answer}",
+            safety=safety,
+            sources=sources,
+            enhanced_prompt=enhanced_prompt,
+            warnings=warnings + post_warnings,
+        )
+
+    quiz_items = services.quiz_service.generate_context(
+        payload.question,
+        document_context,
+        enhanced_prompt=enhanced_prompt,
+        context_label="Representative context from all eligible uploaded documents",
+    )
+    return AskResponse(
+        status="ok",
+        mode_used="quiz",
+        answer=f"{header}\n\nGenerated study questions from the eligible uploaded medical documents.",
+        safety=safety,
+        sources=sources,
+        enhanced_prompt=enhanced_prompt,
+        quiz_items=quiz_items,
+        warnings=warnings,
+    )
+
+
+def _build_search_all_document_context(
+    services: SimpleNamespace,
+    eligible_records: list,
+    chunks: list[RetrievedChunk],
+) -> tuple[str, list[RetrievedChunk], list[str]]:
+    grouped_chunks = _group_chunks_by_document(chunks)
+    max_chars = max(int(getattr(services.rag_service.settings, "context_max_chars", 12000) or 12000), 3000)
+    per_document_budget = max(1200, min(4000, max_chars // max(len(eligible_records), 1)))
+    context_sections: list[str] = []
+    representative_chunks: list[RetrievedChunk] = []
+    warnings: list[str] = []
+
+    for record in eligible_records:
+        document_id = getattr(record, "document_id", "")
+        filename = getattr(record, "filename", document_id or "document")
+        document_chunks = grouped_chunks.get(document_id, [])
+        if not document_chunks:
+            warnings.append(f"No readable stored text was available for {filename}.")
+            continue
+        section, used_chunks, omitted_count = _representative_section_for_document(
+            filename,
+            document_chunks,
+            max_chars=per_document_budget,
+        )
+        if not section:
+            warnings.append(f"Readable text from {filename} was omitted by safety filtering.")
+            continue
+        context_sections.append(section)
+        representative_chunks.extend(used_chunks)
+        if omitted_count:
+            warnings.append(
+                f"{filename} was summarized from representative content; {omitted_count} chunk(s) were not included in the prompt budget."
+            )
+
+    return "\n\n".join(context_sections), representative_chunks, warnings
+
+
+def _group_chunks_by_document(chunks: list[RetrievedChunk]) -> dict[str, list[RetrievedChunk]]:
+    grouped: dict[str, list[RetrievedChunk]] = {}
+    for chunk in chunks:
+        document_id = str(chunk.metadata.get("document_id", ""))
+        if not document_id:
+            continue
+        grouped.setdefault(document_id, []).append(chunk)
+    for document_chunks in grouped.values():
+        document_chunks.sort(
+            key=lambda chunk: (
+                int(chunk.metadata.get("page", 0) or 0),
+                str(chunk.metadata.get("chunk_id", "")),
+            )
+        )
+    return grouped
+
+
+def _representative_section_for_document(
+    filename: str,
+    chunks: list[RetrievedChunk],
+    *,
+    max_chars: int,
+) -> tuple[str, list[RetrievedChunk], int]:
+    parts = [f"Document: {filename}"]
+    used_chunks: list[RetrievedChunk] = []
+    current_chars = len(parts[0])
+    for chunk in chunks:
+        safe_text = normalize_whitespace(strip_unsafe_guidance(chunk.text))
+        if not safe_text:
+            continue
+        page = int(chunk.metadata.get("page", 0) or 0) + 1
+        chunk_id = str(chunk.metadata.get("chunk_id", "chunk"))
+        block = f"[{filename}, page {page}, chunk {chunk_id}]\n{safe_text}"
+        remaining = max_chars - current_chars - 2
+        if remaining <= 0:
+            break
+        if len(block) > remaining:
+            if used_chunks:
+                break
+            block = block[:remaining].rstrip()
+        parts.append(block)
+        used_chunks.append(chunk)
+        current_chars += len(block) + 2
+    omitted_count = max(len(chunks) - len(used_chunks), 0)
+    return "\n\n".join(parts) if used_chunks else "", used_chunks, omitted_count
+
+
+def _build_search_all_inventory_header(scope_state: dict, workflow_warnings: list[str]) -> str:
+    lines = ["Included medical-scope documents:"]
+    for record in scope_state["eligible_records"]:
+        lines.append(f"- {getattr(record, 'filename', getattr(record, 'document_id', 'document'))}")
+    if scope_state["ineligible_records"]:
+        lines.append("")
+        lines.append("Skipped out-of-scope or unverified documents:")
+        for record in scope_state["ineligible_records"]:
+            reason = getattr(record, "scope_reason", None) or getattr(record, "scope_category", "not verified")
+            filename = getattr(record, "filename", getattr(record, "document_id", "document"))
+            lines.append(f"- {filename} ({reason})")
+    if workflow_warnings:
+        lines.append("")
+        lines.append("Coverage notes:")
+        for warning in workflow_warnings:
+            lines.append(f"- {warning}")
+    return "\n".join(lines)
+
+
 def _retrieve_document_chunks_for_chat(
     services: SimpleNamespace,
     payload: AskRequest,
@@ -447,6 +693,8 @@ def _document_scope_state(services: SimpleNamespace, document_ids: list[str] | N
         warnings.append(f"{count} document{'s have' if count != 1 else ' has'} unknown scope and will be used with caution.")
     return {
         "has_records": bool(scoped_records),
+        "eligible_records": eligible_records,
+        "ineligible_records": ineligible_records,
         "eligible_ids": {getattr(record, "document_id") for record in eligible_records if getattr(record, "document_id", None)},
         "ineligible_count": len(ineligible_records),
         "out_of_scope_count": len(ineligible_records),
