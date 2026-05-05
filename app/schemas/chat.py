@@ -8,14 +8,32 @@ from app.schemas.common import QuizItem
 from app.schemas.pubmed import PubMedArticle
 from app.schemas.safety import SafetyAssessment
 
-ChatMode = Literal["auto", "rag", "summarize", "simplify", "quiz", "pubmed", "prompt_enhance"]
-ResponseMode = Literal[
-    "refuse",
+ChatMode = Literal[
+    "auto",
+    "general_education",
     "rag",
+    "document_rag",
     "summarize",
     "simplify",
     "quiz",
     "pubmed",
+    "pubmed_metadata",
+    "open_literature",
+    "open_article",
+    "prompt_enhance",
+]
+ResponseMode = Literal[
+    "refuse",
+    "general_education",
+    "rag",
+    "document_rag",
+    "summarize",
+    "simplify",
+    "quiz",
+    "pubmed",
+    "pubmed_metadata",
+    "open_literature",
+    "open_article",
     "prompt_enhance",
 ]
 ChatStatus = Literal["ok", "refused", "no_source"]
@@ -28,6 +46,9 @@ class SourceRef(BaseModel):
     chunk_id: str
     excerpt: str
     score: float
+    section: str | None = None
+    citation_label: str | None = None
+    source_status: str | None = None
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=4000)

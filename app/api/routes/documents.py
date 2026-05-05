@@ -4,7 +4,14 @@ from types import SimpleNamespace
 
 from fastapi import APIRouter, File, Request, UploadFile
 
-from app.schemas.documents import DocumentRecord, DocumentUploadResponse
+from app.core.exceptions import AppError, ExternalServiceError
+from app.schemas.documents import (
+    DocumentRecord,
+    DocumentDeleteResponse,
+    DocumentUploadResponse,
+    DocumentWorkflowRequest,
+    DocumentWorkflowResponse,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -26,8 +33,37 @@ async def upload_document(
 ) -> DocumentUploadResponse:
     services = _get_services(request)
     content = await file.read()
-    return services.document_service.process_upload(
-        filename=file.filename or "uploaded.pdf",
-        content_type=file.content_type,
-        content=content,
-    )
+    try:
+        return services.document_service.process_upload(
+            filename=file.filename or "uploaded.pdf",
+            content_type=file.content_type,
+            content=content,
+        )
+    except AppError:
+        raise
+    except Exception as exc:
+        raise ExternalServiceError(
+            "Document upload failed before indexing could complete. Existing indexed documents were left unchanged."
+        ) from exc
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+def delete_document(document_id: str, request: Request) -> DocumentDeleteResponse:
+    services = _get_services(request)
+    try:
+        return services.document_service.delete_document(document_id)
+    except AppError:
+        raise
+    except Exception as exc:
+        raise ExternalServiceError(
+            "Document deletion failed before cleanup could complete. Existing documents were left unchanged."
+        ) from exc
+
+
+@router.post("/workflow", response_model=DocumentWorkflowResponse)
+def run_document_workflow(
+    payload: DocumentWorkflowRequest,
+    request: Request,
+) -> DocumentWorkflowResponse:
+    services = _get_services(request)
+    return services.document_workflow_service.run(payload)

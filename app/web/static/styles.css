@@ -47,7 +47,7 @@ body::before {
 .page-shell {
   width: min(1500px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 28px 0 44px;
+  padding: 18px 0 36px;
 }
 
 .topbar,
@@ -72,7 +72,7 @@ body::before {
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  padding: 28px;
+  padding: 20px 24px;
   border-radius: var(--radius-xl);
 }
 
@@ -85,14 +85,14 @@ body::before {
 }
 
 .topbar h1 {
-  font-size: clamp(2.3rem, 4vw, 4rem);
+  font-size: clamp(2rem, 3.3vw, 3.4rem);
 }
 
 .subhead {
   max-width: 760px;
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: var(--ink-soft);
-  line-height: 1.65;
+  line-height: 1.5;
 }
 
 .topbar-actions {
@@ -157,24 +157,25 @@ body::before {
 .hero-grid {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
-  gap: 18px;
-  margin-top: 18px;
+  gap: 14px;
+  margin-top: 12px;
 }
 
 .hero-card {
-  padding: 24px;
+  padding: 18px 20px;
   border-radius: var(--radius-xl);
   position: relative;
   overflow: hidden;
 }
 
 .hero-card h2 {
-  font-size: clamp(1.6rem, 2.5vw, 2.4rem);
+  font-size: clamp(1.45rem, 2.1vw, 2.05rem);
 }
 
 .hero-card p {
   color: var(--ink-soft);
-  line-height: 1.65;
+  line-height: 1.45;
+  margin: 8px 0;
 }
 
 .hero-card-main::after {
@@ -192,12 +193,12 @@ body::before {
 .hero-notes {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .hero-notes span {
-  padding: 9px 12px;
+  padding: 7px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.84);
   border: 1px solid var(--line);
@@ -207,12 +208,12 @@ body::before {
 .hero-mini-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .mini-metric {
-  padding: 14px 16px;
+  padding: 11px 13px;
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(24, 58, 55, 0.1);
@@ -226,7 +227,7 @@ body::before {
 
 .mini-metric p {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: 0.88rem;
 }
 
 .hero-visual-card {
@@ -239,6 +240,8 @@ body::before {
 .hero-illustration {
   width: 100%;
   max-width: 100%;
+  max-height: 190px;
+  object-fit: contain;
   animation: floatCard 6s ease-in-out infinite;
   filter: drop-shadow(0 24px 32px rgba(0, 105, 92, 0.14));
 }
@@ -246,12 +249,12 @@ body::before {
 .hero-orbit {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .floating-pill {
-  padding: 9px 13px;
+  padding: 7px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(24, 58, 55, 0.12);
@@ -269,9 +272,9 @@ body::before {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 0.95fr 1.3fr 1fr;
+  grid-template-columns: 0.82fr 1.06fr 1.06fr;
   gap: 18px;
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .panel {
@@ -457,6 +460,40 @@ body::before {
   display: grid;
   gap: 5px;
   cursor: pointer;
+}
+
+.document-card-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.danger-button {
+  color: var(--danger);
+  font-size: 0.82rem;
+  padding: 2px 0;
+}
+
+.danger-outline-button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(178, 58, 72, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--danger);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 6px 10px;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.danger-outline-button:hover {
+  background: rgba(178, 58, 72, 0.1);
+  border-color: rgba(178, 58, 72, 0.48);
+  transform: translateY(-1px);
 }
 
 .pubmed-select-card {

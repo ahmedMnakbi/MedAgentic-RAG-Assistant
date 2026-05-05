@@ -31,4 +31,9 @@ class SimplificationService:
             f"{context_label}:\n{context}\n\n"
             f"Enhanced execution prompt (preserve intent):\n{enhanced_prompt or 'Not provided.'}"
         )
-        return self.groq_client.generate_text("simplify.txt", user_prompt)
+        settings = getattr(self.groq_client, "settings", None)
+        return self.groq_client.generate_text(
+            "simplify.txt",
+            user_prompt,
+            model_name=getattr(settings, "groq_model_answer", None),
+        )

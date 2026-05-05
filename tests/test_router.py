@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.schemas.pubmed import PubMedArticle
 from app.services.rag_service import RetrievedChunk
 
@@ -12,6 +14,7 @@ def test_auto_router_uses_summarize_mode(client, app, monkeypatch):
             score=0.08,
         )
     ]
+    monkeypatch.setattr(app.state.services.document_service, "list_documents", lambda: [SimpleNamespace(document_id="doc_1")])
     monkeypatch.setattr(app.state.services.rag_service, "retrieve", lambda *args, **kwargs: retrieved)
     monkeypatch.setattr(
         app.state.services.summarization_service,
@@ -21,7 +24,7 @@ def test_auto_router_uses_summarize_mode(client, app, monkeypatch):
 
     response = client.post(
         "/api/chat/ask",
-        json={"question": "Summarize the key points about nephron structure.", "mode": "auto"},
+        json={"question": "Summarize the uploaded document's key points about nephron structure.", "mode": "auto"},
     )
 
     assert response.status_code == 200

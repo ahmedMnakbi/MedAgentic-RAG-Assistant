@@ -1,6 +1,7 @@
 const state = {
   documents: [],
   latestPubmedPayload: null,
+  latestPromptEnhanceV2: null,
   promptCategory: "",
   promptSuggestions: [],
   selectedPromptId: null,
@@ -65,11 +66,15 @@ function renderDocuments() {
     .map(
       (doc) => `
         <article class="document-card">
-          <strong>${escapeHtml(doc.filename)}</strong>
+          <div class="document-card-top">
+            <strong>${escapeHtml(doc.filename)}</strong>
+            <button class="danger-outline-button" type="button" data-delete-document="${escapeHtml(doc.document_id)}">Remove</button>
+          </div>
           <div class="meta-line">
             <span>ID: <span class="mono">${escapeHtml(doc.document_id)}</span></span>
             <span>${doc.page_count} pages</span>
             <span>${doc.chunk_count} chunks</span>
+            <span>${escapeHtml(formatIndexingStatus(doc.indexing_status))}</span>
           </div>
           <p class="microcopy">Uploaded ${new Date(doc.uploaded_at).toLocaleString()}</p>
         </article>
@@ -98,6 +103,71 @@ async function loadDocuments() {
   const docs = await api("/api/documents");
   state.documents = docs;
   renderDocuments();
+}
+
+function formatIndexingStatus(status) {
+  const labels = {
+    indexed: "Vector indexed",
+    indexed_text_only: "Text fallback",
+  };
+  return labels[status] || "Vector indexed";
+}
+
+function cleanOpenLiteratureQuery(payload) {
+  const source = payload.open_literature_query || payload.original_input || "";
+  let query = source
+    .replace(/^[\s\-:•]+/, "")
+    .replace(/\b(find|search|show|explain|compare|summarize)\b/gi, " ")
+    .replace(/\b(real|usable)\b/gi, " ")
+    .replace(/\b(not just abstracts?|abstracts?)\b/gi, " ")
+    .replace(/\b(articles?|papers?|studies|literature)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!query) query = payload.original_input || "";
+  if (/diabetes/i.test(query) && !/mellitus/i.test(query)) {
+    query = query.replace(/\bdiabetes\b/i, "diabetes mellitus");
+  }
+  if (!/\bfull[- ]?text\b/i.test(query)) query = `${query} full text`;
+  if (!/\breview\b/i.test(query)) query = `${query} review`;
+  if (!/\bopen access\b/i.test(query)) query = `${query} open access`;
+  return query.replace(/\s+/g, " ").trim();
+}
+
+function inferFullTextRequired(payload) {
+  return Boolean(
+    payload.full_text_required ||
+      /full[- ]?text|not just abstracts?|real articles|open access/i.test(
+        `${payload.original_input || ""} ${payload.optimized_prompt || ""} ${payload.open_literature_query || ""}`,
+      ),
+  );
+}
+
+function outputFormatToOpenLiteratureMode(outputFormat) {
+  const map = {
+    evidence_table: "evidence_table",
+    article_digest: "article_digest",
+    study_notes: "study_notes",
+    quiz_json: "quiz",
+    deep_review: "deep_review",
+  };
+  return map[outputFormat] || "quick_answer";
+}
+
+async function deleteDocument(documentId) {
+  const status = document.getElementById("upload-status");
+  const confirmed = window.confirm(
+    "Delete this document from MARA? This removes it from retrieval and study workflows.",
+  );
+  if (!confirmed) return;
+  try {
+    const payload = await api(`/api/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" });
+    status.textContent = payload.warnings?.length
+      ? `Deleted document with warnings: ${payload.warnings.join(" ")}`
+      : "Deleted document from MARA.";
+    await loadDocuments();
+  } catch (error) {
+    status.textContent = error.message;
+  }
 }
 
 function renderDocumentSources(sources) {
@@ -374,7 +444,7 @@ function serializeChatPayload() {
     question: document.getElementById("chat-question").value.trim(),
     mode: document.getElementById("chat-mode").value,
     document_ids: documentIds,
-    enhance_prompt: document.getElementById("enhance-prompt-toggle").checked,
+    enhance_prompt: false,
     top_k: Number(document.getElementById("chat-top-k").value),
   };
 }
@@ -529,6 +599,206 @@ function renderPromptImprovement(payload) {
         ${(payload.changes || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
       </div>
     </article>
+  `;
+}
+
+function renderKeyValueList(items) {
+  return (items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function renderPromptEnhanceV2(payload) {
+  const shell = document.getElementById("prompt-enhance-v2-result");
+  shell.className = "result-shell";
+  state.latestPromptEnhanceV2 = payload;
+  const optimizedTask = cleanOptimizedTask(payload);
+  const mostlyUnchanged =
+    normalizeComparableText(optimizedTask) &&
+    normalizeComparableText(optimizedTask) === normalizeComparableText(payload.original_input || "");
+  const routeButtons = `
+    ${
+      payload.inferred_mode === "open_literature"
+        ? `<button class="secondary-button" type="button" data-enhanced-to-open-literature="true">Send to Open Literature</button>`
+        : ""
+    }
+    ${
+      payload.inferred_mode === "open_article"
+        ? `<button class="secondary-button" type="button" data-enhanced-to-open-article="true">Send to Open Article</button>`
+        : ""
+    }
+  `;
+  shell.innerHTML = `
+    <article class="result-card">
+      <div class="result-topline">
+        <span class="mode-badge">${escapeHtml(payload.inferred_mode)}</span>
+        <span class="mode-badge">${payload.can_send_to_assistant ? "sendable" : "blocked"}</span>
+      </div>
+      <h3>Improved Prompt</h3>
+      ${
+        mostlyUnchanged
+          ? `<p class="microcopy">This request was already clear; MARA kept the task mostly unchanged and added routing, source, and safety planning.</p>`
+          : ""
+      }
+      <div class="prompt-template mono">${escapeHtml(payload.optimized_prompt)}</div>
+      <div class="inline-actions">
+        <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_prompt)}">Copy prompt</button>
+        <button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>
+        ${routeButtons}
+      </div>
+    </article>
+    <article class="result-card">
+      <h3>Route & Source Plan</h3>
+      <ul>
+        <li>Route: ${escapeHtml(payload.inferred_mode)}</li>
+        <li>RAG query: ${escapeHtml(payload.rag_query || "not required")}</li>
+        <li>PubMed query: ${escapeHtml(payload.pubmed_query || "not required")}</li>
+        <li>Open Literature query: ${escapeHtml(payload.open_literature_query || "not required")}</li>
+        <li>Open Article: ${escapeHtml(payload.open_article_instruction || "not required")}</li>
+      </ul>
+    </article>
+    <article class="result-card">
+      <h3>Retrieval Plan</h3>
+      <ul>${renderKeyValueList(payload.retrieval_plan)}</ul>
+    </article>
+    <article class="result-card">
+      <h3>Context Plan</h3>
+      <ul>${renderKeyValueList(payload.context_plan)}</ul>
+    </article>
+    <article class="result-card">
+      <h3>Safety & Harness Checks</h3>
+      <ul>${renderKeyValueList([...(payload.safety_plan || []), ...(payload.quality_checks || [])])}</ul>
+      ${(payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("")}
+    </article>
+    <details class="result-card">
+      <summary>Raw JSON</summary>
+      <div class="prompt-template mono">${escapeHtml(JSON.stringify(payload, null, 2))}</div>
+      <div class="inline-actions">
+        <button class="secondary-button" type="button" data-copy-text="${escapeHtml(JSON.stringify(payload, null, 2))}">Copy JSON</button>
+      </div>
+    </details>
+  `;
+  shell.dataset.optimizedTask = optimizedTask;
+  shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
+  shell.dataset.originalInput = payload.original_input || "";
+  shell.dataset.inferredMode = payload.inferred_mode || "auto";
+  shell.dataset.openLiteratureQuery = cleanOpenLiteratureQuery(payload);
+  shell.dataset.fullTextRequired = String(inferFullTextRequired(payload));
+  shell.dataset.outputFormat = payload.output_format || "markdown";
+}
+
+function normalizeComparableText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[.?!]+$/g, "")
+    .toLowerCase();
+}
+
+function cleanOptimizedTask(payload) {
+  const direct = cleanTaskText(payload.optimized_task || "");
+  if (direct) return direct;
+  const optimizedPrompt = String(payload.optimized_prompt || "").trim();
+  const taskMatch = optimizedPrompt.match(/^Task:\s*(.+)$/im);
+  if (taskMatch?.[1]) return cleanTaskText(taskMatch[1]);
+  return cleanTaskText(optimizedPrompt) || String(payload.original_input || "").trim();
+}
+
+function cleanTaskText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(/\s+(?:Audience|Route|Source scope|Output format|Instructions|Use only|Cite each|Do not|If evidence)\s*:/i)[0]
+    .split(/\s+(?:Use only retrieved|Use retrieved|Cite each source|Do not diagnose|If evidence is lacking)\b/i)[0]
+    .trim();
+}
+
+function promptEnhancementHandoffTask(payload, resultShell) {
+  const fromPayload = cleanOptimizedTask(payload || {});
+  if (fromPayload) return fromPayload;
+  const fromDataset = String(resultShell?.dataset?.optimizedTask || "").trim();
+  if (fromDataset) return fromDataset;
+  const optimizedPrompt = String(resultShell?.dataset?.optimizedPrompt || "").trim();
+  const taskMatch = optimizedPrompt.match(/^Task:\s*(.+)$/im);
+  if (taskMatch?.[1]) return cleanTaskText(taskMatch[1]);
+  const originalInput = String(resultShell?.dataset?.originalInput || "").trim();
+  if (originalInput) return originalInput;
+  return document.getElementById("prompt-enhance-v2-input").value.trim();
+}
+
+function setAssistantModeFromEnhancement(inferredMode) {
+  const modeSelect = document.getElementById("chat-mode");
+  const modeMap = {
+    document_rag: "document_rag",
+    rag: "rag",
+    open_literature: "open_literature",
+    pubmed_metadata: "pubmed",
+    pubmed: "pubmed",
+    general_education: "general_education",
+    open_article: "auto",
+  };
+  const nextMode = modeMap[inferredMode] || "auto";
+  if (Array.from(modeSelect.options).some((option) => option.value === nextMode)) {
+    modeSelect.value = nextMode;
+  }
+}
+
+function renderOpenLiterature(payload) {
+  const shell = document.getElementById("open-literature-result");
+  const warnings = (payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("");
+  const evidence = (payload.evidence_table || [])
+    .map(
+      (row) => `
+        <article class="source-card">
+          <strong>${escapeHtml(row.article)}</strong>
+          <p>${escapeHtml(row.main_finding)}</p>
+          <div class="meta-line">
+            <span>${escapeHtml(row.source_status)}</span>
+            <span>${escapeHtml(row.citation)}</span>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+  shell.className = "result-shell";
+  shell.innerHTML = `
+    <article class="result-card">
+      <div class="result-topline">
+        <span class="status-badge ${escapeHtml(payload.status)}">${escapeHtml(payload.status)}</span>
+        <span class="mode-badge">Candidates ${payload.candidate_count || 0}</span>
+        <span class="mode-badge">Full text ${payload.full_text_count || 0}</span>
+        <span class="mode-badge">Abstract ${payload.abstract_only_count || 0}</span>
+        <span class="mode-badge">Restricted ${payload.restricted_count || 0}</span>
+      </div>
+      <div class="answer-body">${escapeHtml(payload.answer || "")}</div>
+      ${warnings ? `<div class="result-topline">${warnings}</div>` : ""}
+    </article>
+    <article class="result-card">
+      <h3>Search Details</h3>
+      <p class="microcopy">Sources: ${(payload.sources_searched || []).map(escapeHtml).join(", ")}</p>
+      <p class="microcopy">Variants: ${(payload.query_variants || []).map(escapeHtml).join(" | ")}</p>
+    </article>
+    ${evidence ? `<article class="result-card"><h3>Evidence Table</h3><div class="document-list">${evidence}</div></article>` : ""}
+  `;
+}
+
+function renderOpenArticle(payload) {
+  const shell = document.getElementById("open-article-result");
+  const article = payload.article || {};
+  const warnings = (payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("");
+  const quizItems = renderQuizItems(payload.quiz_items || []);
+  shell.className = "result-shell";
+  shell.innerHTML = `
+    <article class="result-card">
+      <div class="result-topline">
+        <span class="status-badge ${escapeHtml(payload.status)}">${escapeHtml(payload.status)}</span>
+        <span class="mode-badge">${escapeHtml(payload.action || "import")}</span>
+        <span class="mode-badge">${escapeHtml(article.full_text_status || "unknown")}</span>
+        <span class="mode-badge">Quality ${escapeHtml(article.extraction_quality_score ?? "n/a")}</span>
+      </div>
+      <strong>${escapeHtml(article.title || "Open article")}</strong>
+      <div class="answer-body">${escapeHtml(payload.answer || "")}</div>
+      ${warnings ? `<div class="result-topline">${warnings}</div>` : ""}
+    </article>
+    ${quizItems ? `<article class="result-card"><h3>Quiz items</h3><div class="document-list">${quizItems}</div></article>` : ""}
   `;
 }
 
@@ -698,6 +968,13 @@ function bindStaticInteractions() {
     await loadDocuments();
   });
 
+  document.getElementById("documents-list").addEventListener("click", async (event) => {
+    const deleteButton = event.target.closest("[data-delete-document]");
+    if (deleteButton) {
+      await deleteDocument(deleteButton.dataset.deleteDocument);
+    }
+  });
+
   document.getElementById("all-docs-toggle").addEventListener("change", (event) => {
     document.getElementById("doc-picker-wrap").classList.toggle("hidden", event.target.checked);
   });
@@ -723,7 +1000,10 @@ function bindStaticInteractions() {
     const data = new FormData(form);
     try {
       const payload = await api("/api/documents/upload", { method: "POST", body: data });
-      status.textContent = `Indexed ${payload.filename} successfully.`;
+      status.textContent =
+        payload.status === "indexed_text_only"
+          ? `Saved ${payload.filename} for direct PDF workflows. Vector indexing is unavailable, so retrieval will use PDF text fallback.`
+          : `Indexed ${payload.filename} successfully.`;
       form.reset();
       await loadDocuments();
     } catch (error) {
@@ -775,15 +1055,16 @@ function bindStaticInteractions() {
     }
   });
 
-  document.getElementById("prompt-suggest-form").addEventListener("submit", suggestPrompts);
-  document.getElementById("prompt-search-form").addEventListener("submit", searchPrompts);
+  document.getElementById("prompt-suggest-form")?.addEventListener("submit", suggestPrompts);
+  document.getElementById("prompt-search-form")?.addEventListener("submit", searchPrompts);
 
   document.querySelectorAll(".prompt-filter-button").forEach((button) => {
     button.addEventListener("click", async () => {
       document.querySelectorAll(".prompt-filter-button").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       state.promptCategory = button.dataset.category || "";
-      document.getElementById("prompt-search-category").value = state.promptCategory;
+      const categoryInput = document.getElementById("prompt-search-category");
+      if (categoryInput) categoryInput.value = state.promptCategory;
       await searchPrompts();
     });
   });
@@ -795,13 +1076,13 @@ function bindStaticInteractions() {
     });
   });
 
-  document.getElementById("prompt-search-results").addEventListener("click", async (event) => {
+  document.getElementById("prompt-search-results")?.addEventListener("click", async (event) => {
     const card = event.target.closest("[data-prompt-id]");
     if (!card) return;
     await loadPromptDetail(card.dataset.promptId);
   });
 
-  document.getElementById("prompt-suggest-results").addEventListener("click", (event) => {
+  document.getElementById("prompt-suggest-results")?.addEventListener("click", (event) => {
     const improveButton = event.target.closest("[data-suggestion-to-improver]");
     if (improveButton) {
       const suggestion = getPromptSuggestionById(improveButton.dataset.suggestionToImprover);
@@ -822,7 +1103,7 @@ function bindStaticInteractions() {
     }
   });
 
-  document.getElementById("prompt-improve-form").addEventListener("submit", async (event) => {
+  document.getElementById("prompt-improve-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const shell = document.getElementById("prompt-improve-result");
     shell.className = "prompt-improve-result empty-state";
@@ -844,13 +1125,125 @@ function bindStaticInteractions() {
       shell.textContent = error.message;
     }
   });
+
+  document.getElementById("prompt-enhance-v2-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shell = document.getElementById("prompt-enhance-v2-result");
+    shell.className = "result-shell empty-state";
+    shell.textContent = "Building prompt package...";
+    try {
+      const payload = await api("/api/prompts/enhance-v2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          raw_input: document.getElementById("prompt-enhance-v2-input").value.trim(),
+          target_mode: document.getElementById("prompt-enhance-v2-mode").value,
+          audience: document.getElementById("prompt-enhance-v2-audience").value.trim() || null,
+          source_scope: document.getElementById("prompt-enhance-v2-scope").value,
+          output_format: document.getElementById("prompt-enhance-v2-output").value,
+          strict_grounding: document.getElementById("prompt-enhance-v2-grounding").checked,
+          include_retrieval_plan: true,
+          include_safety_checks: true,
+          full_text_required: document.getElementById("prompt-enhance-v2-fulltext").checked,
+        }),
+      });
+      renderPromptEnhanceV2(payload);
+    } catch (error) {
+      shell.className = "result-shell empty-state";
+      shell.textContent = error.message;
+    }
+  });
+
+  document.getElementById("prompt-enhance-v2-result").addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("[data-copy-text]");
+    if (copyButton) {
+      await navigator.clipboard?.writeText(copyButton.dataset.copyText || "");
+      return;
+    }
+    const sendButton = event.target.closest("[data-enhanced-to-chat]");
+    if (sendButton) {
+      const resultShell = document.getElementById("prompt-enhance-v2-result");
+      document.getElementById("chat-question").value =
+        promptEnhancementHandoffTask(state.latestPromptEnhanceV2, resultShell);
+      setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || "auto");
+      document.getElementById("chat-question").focus();
+    }
+    const openLiteratureButton = event.target.closest("[data-enhanced-to-open-literature]");
+    if (openLiteratureButton) {
+      const resultShell = document.getElementById("prompt-enhance-v2-result");
+      const queryInput = document.getElementById("open-literature-query");
+      const fullTextInput = document.getElementById("open-literature-fulltext");
+      const modeSelect = document.getElementById("open-literature-mode");
+      queryInput.value = resultShell.dataset.openLiteratureQuery || resultShell.dataset.originalInput || "";
+      fullTextInput.checked = resultShell.dataset.fullTextRequired === "true";
+      const targetMode = outputFormatToOpenLiteratureMode(resultShell.dataset.outputFormat || "markdown");
+      if (Array.from(modeSelect.options).some((option) => option.value === targetMode)) {
+        modeSelect.value = targetMode;
+      }
+      queryInput.focus();
+    }
+    const openArticleButton = event.target.closest("[data-enhanced-to-open-article]");
+    if (openArticleButton) {
+      const resultShell = document.getElementById("prompt-enhance-v2-result");
+      const match = (resultShell.dataset.originalInput || "").match(/https?:\/\/\S+/i);
+      document.getElementById("open-article-url").value = match ? match[0] : "";
+      document.getElementById("open-article-url").focus();
+    }
+  });
+
+  document.getElementById("open-literature-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shell = document.getElementById("open-literature-result");
+    shell.className = "result-shell empty-state";
+    shell.textContent = "Searching open literature...";
+    try {
+      const payload = await api("/api/open-literature/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: document.getElementById("open-literature-query").value.trim(),
+          output_mode: document.getElementById("open-literature-mode").value,
+          filters: {
+            max_results: Number(document.getElementById("open-literature-max-results").value),
+            full_text_required: document.getElementById("open-literature-fulltext").checked,
+            open_access_only: true,
+          },
+        }),
+      });
+      renderOpenLiterature(payload);
+    } catch (error) {
+      shell.className = "result-shell empty-state";
+      shell.textContent = error.message;
+    }
+  });
+
+  document.getElementById("open-article-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shell = document.getElementById("open-article-result");
+    shell.className = "result-shell empty-state";
+    shell.textContent = "Importing article and running action...";
+    try {
+      const payload = await api("/api/open-article/transform", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: document.getElementById("open-article-url").value.trim(),
+          action: document.getElementById("open-article-action").value,
+          question: document.getElementById("open-article-question").value.trim() || null,
+        }),
+      });
+      renderOpenArticle(payload);
+    } catch (error) {
+      shell.className = "result-shell empty-state";
+      shell.textContent = error.message;
+    }
+  });
 }
 
 async function boot() {
   bindStaticInteractions();
   await loadHealth();
   await loadDocuments();
-  await searchPrompts();
 }
 
 boot().catch((error) => {
