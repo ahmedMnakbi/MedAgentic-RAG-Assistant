@@ -23,15 +23,15 @@ def test_covid_and_diabetes_text_is_eligible():
 
 def test_automata_text_is_non_medical_and_not_eligible():
     result = DocumentScopeService().classify(
-        "Theory of languages covers automata, regular expressions, context-free grammar, and Turing machine models."
+        "Théorie des langages couvre les automates, grammaire, langage régulier et Turing machine models."
     )
 
     assert result.scope_category == "non_medical"
     assert result.eligible_for_medical_workflows is False
 
 
-def test_unknown_scope_is_allowed_with_warning_category():
+def test_unknown_scope_is_not_eligible_by_default():
     result = DocumentScopeService().classify("A short ambiguous handout with few clear topic signals.")
 
-    assert result.scope_category == "unknown"
-    assert result.eligible_for_medical_workflows is True
+    assert result.scope_category == "unknown_unverified"
+    assert result.eligible_for_medical_workflows is False

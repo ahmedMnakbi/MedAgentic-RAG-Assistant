@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from typing import Literal
 
-DocumentScopeCategory = Literal["medical", "medical_adjacent", "non_medical", "unknown"]
+DocumentScopeCategory = Literal["medical", "medical_adjacent", "non_medical", "unknown", "unknown_unverified"]
 
 
 class DocumentRecord(BaseModel):
@@ -15,14 +15,15 @@ class DocumentRecord(BaseModel):
     uploaded_at: str
     document_hash: str | None = None
     indexing_status: str = "indexed"
-    scope_category: DocumentScopeCategory = "unknown"
+    scope_category: DocumentScopeCategory = "unknown_unverified"
     scope_confidence: float = 0.0
-    scope_reason: str = "Scope was not classified for this document."
-    eligible_for_medical_workflows: bool = True
+    scope_reason: str = "Scope has not been verified for this document."
+    eligible_for_medical_workflows: bool = False
 
 
 class DocumentUploadResponse(DocumentRecord):
     status: str = "indexed"
+    warnings: list[str] = Field(default_factory=list)
 
 
 class DocumentDeleteResponse(BaseModel):

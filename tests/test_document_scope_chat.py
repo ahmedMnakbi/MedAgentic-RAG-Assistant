@@ -68,15 +68,12 @@ def test_non_medical_selected_document_quiz_returns_scope_refusal(client, app, m
     assert "outside MARA's medical education scope" in payload["answer"]
 
 
-def test_unknown_scope_document_is_used_with_warning(client, app, monkeypatch):
-    chunks = [_chunk("unknown-doc", "unknown.pdf", "Diabetes is mentioned briefly in this ambiguous document.")]
+def test_selected_unknown_scope_document_returns_not_verified_refusal(client, app, monkeypatch):
     monkeypatch.setattr(
         app.state.services.document_service,
         "list_documents",
-        lambda: [_record("unknown-doc", filename="unknown.pdf", scope_category="unknown", eligible=True)],
+        lambda: [_record("unknown-doc", filename="unknown.pdf", scope_category="unknown_unverified", eligible=False)],
     )
-    monkeypatch.setattr(app.state.services.rag_service, "retrieve_document_chunks", lambda *args, **kwargs: chunks)
-    monkeypatch.setattr(app.state.services.summarization_service, "summarize_context", lambda *args, **kwargs: "Summary.")
 
     response = client.post(
         "/api/chat/ask",
@@ -84,8 +81,8 @@ def test_unknown_scope_document_is_used_with_warning(client, app, monkeypatch):
     )
 
     payload = response.json()
-    assert payload["status"] == "ok"
-    assert any("unknown scope" in warning.lower() for warning in payload["warnings"])
+    assert payload["status"] == "refused"
+    assert "not been verified as medical" in payload["answer"]
 
 
 def test_search_all_summarize_generic_prompt_uses_eligible_documents(client, app, monkeypatch):
@@ -178,7 +175,41 @@ def test_search_all_excludes_non_medical_documents(client, app, monkeypatch):
     assert payload["status"] == "ok"
     assert "insulin resistance" in captured["context"]
     assert "formal grammar" not in captured["context"]
-    assert any("Skipped 1 out-of-scope document" in warning for warning in payload["warnings"])
+    assert any("Skipped 1 document" in warning and "not verified as medical-scope" in warning for warning in payload["warnings"])
+
+
+def test_search_all_excludes_unknown_documents(client, app, monkeypatch):
+    chunks = [
+        _chunk("medical-doc", "diabetes.pdf", "Diabetes pathophysiology includes insulin resistance."),
+        _chunk("unknown-doc", "unknown.pdf", "Unverified general content."),
+    ]
+    captured = {}
+    monkeypatch.setattr(
+        app.state.services.document_service,
+        "list_documents",
+        lambda: [
+            _record("medical-doc", filename="diabetes.pdf"),
+            _record("unknown-doc", filename="unknown.pdf", scope_category="unknown_unverified", eligible=False),
+        ],
+    )
+    monkeypatch.setattr(app.state.services.rag_service, "retrieve_document_chunks", lambda *args, **kwargs: chunks)
+
+    def summarize_context(question, context, **kwargs):
+        captured["context"] = context
+        return "Summary."
+
+    monkeypatch.setattr(app.state.services.summarization_service, "summarize_context", summarize_context)
+
+    response = client.post(
+        "/api/chat/ask",
+        json={"question": "Summarize the uploaded PDF document.", "mode": "summarize"},
+    )
+
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "insulin resistance" in captured["context"]
+    assert "Unverified general content" not in captured["context"]
+    assert any("not verified as medical-scope" in warning for warning in payload["warnings"])
 
 
 def test_search_all_returns_clear_message_when_no_eligible_documents(client, app, monkeypatch):

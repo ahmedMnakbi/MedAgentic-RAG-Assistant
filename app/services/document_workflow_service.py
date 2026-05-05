@@ -35,14 +35,20 @@ class DocumentWorkflowService:
             )
         eligible_ids, scope_warnings, blocked = self._eligible_document_ids(request.document_ids)
         if blocked:
+            answer = (
+                "This document appears to be outside MARA's medical education scope. "
+                "MARA is designed for medical and health-learning content, so I can't summarize "
+                "or generate quizzes from this source."
+            )
+            if not any("out-of-scope" in warning for warning in scope_warnings):
+                answer = (
+                    "This document has not been verified as medical or health-learning content, "
+                    "so MARA will not use it for medical workflows by default."
+                )
             return DocumentWorkflowResponse(
                 status="refused",
                 action=request.action,
-                answer=(
-                    "This document appears to be outside MARA's medical education scope. "
-                    "MARA is designed for medical and health-learning content, so I can't summarize "
-                    "or generate quizzes from this source."
-                ),
+                answer=answer,
                 warnings=scope_warnings,
             )
         if eligible_ids is not None and not eligible_ids:
@@ -120,16 +126,20 @@ class DocumentWorkflowService:
         selected_ids = set(document_ids or [])
         scoped = [record for record in records if not selected_ids or record.document_id in selected_ids]
         eligible = [record for record in scoped if record.eligible_for_medical_workflows]
-        out_of_scope = [record for record in scoped if not record.eligible_for_medical_workflows]
+        ineligible = [record for record in scoped if not record.eligible_for_medical_workflows]
+        non_medical = [record for record in ineligible if record.scope_category == "non_medical"]
         warnings = []
-        if out_of_scope:
-            count = len(out_of_scope)
-            warnings.append(f"Skipped {count} out-of-scope document{'s' if count != 1 else ''}.")
+        if ineligible:
+            count = len(ineligible)
+            if non_medical:
+                warnings.append(f"Skipped {count} out-of-scope document{'s' if count != 1 else ''}.")
+            else:
+                warnings.append(f"Skipped {count} document{'s' if count != 1 else ''} because they are not verified as medical-scope sources.")
         unknown = [record for record in eligible if record.scope_category == "unknown"]
         if unknown:
             count = len(unknown)
             warnings.append(f"{count} document{'s have' if count != 1 else ' has'} unknown scope and will be used with caution.")
-        blocked = bool(document_ids and out_of_scope)
+        blocked = bool(document_ids and ineligible and not eligible)
         if document_ids is None:
             return [record.document_id for record in eligible], warnings, False
         return [record.document_id for record in eligible], warnings, blocked

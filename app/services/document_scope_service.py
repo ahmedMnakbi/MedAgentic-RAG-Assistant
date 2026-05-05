@@ -35,6 +35,12 @@ class DocumentScopeService:
         "nursing",
         "patient",
         "blood pressure",
+        "médecine",
+        "médical",
+        "santé",
+        "maladie",
+        "clinique",
+        "patient",
         "pathology",
         "pathophysiology",
         "pharmacology",
@@ -59,29 +65,50 @@ class DocumentScopeService:
     }
     NON_MEDICAL_TERMS = {
         "automata",
+        "automate",
+        "automates",
         "business report",
+        "cartes",
+        "chatbot",
         "compiler",
         "context-free grammar",
+        "dés",
         "deterministic finite",
+        "équation",
+        "équiprobabilité",
+        "évènement",
         "formal language",
+        "grammaire",
+        "langage",
+        "langages",
         "history essay",
         "legal contract",
         "mathematics",
+        "probabilité",
+        "probabilité conditionnelle",
         "programming manual",
+        "programme",
+        "programmation",
+        "python",
+        "rag",
         "regular expression",
+        "retrieval augmented generation",
         "software documentation",
         "theory of languages",
+        "théorie des langages",
         "turing machine",
+        "univers",
+        "urnes",
     }
 
     def classify(self, text: str) -> DocumentScopeAssessment:
         sample = normalize_whitespace(text)[:20000].lower()
         if not sample:
             return DocumentScopeAssessment(
-                scope_category="unknown",
+                scope_category="unknown_unverified",
                 scope_confidence=0.0,
                 scope_reason="No readable text sample was available for scope classification.",
-                eligible_for_medical_workflows=True,
+                eligible_for_medical_workflows=False,
             )
 
         medical_hits = self._hits(sample, self.MEDICAL_TERMS)
@@ -113,10 +140,10 @@ class DocumentScopeService:
             )
 
         return DocumentScopeAssessment(
-            scope_category="unknown",
+            scope_category="unknown_unverified",
             scope_confidence=0.25,
             scope_reason="The document did not contain enough clear medical or non-medical scope signals.",
-            eligible_for_medical_workflows=True,
+            eligible_for_medical_workflows=False,
         )
 
     @staticmethod

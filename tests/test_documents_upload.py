@@ -3,6 +3,8 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 
+from app.clients.pdf_loader import PDFLoaderClient
+
 from reportlab.pdfgen import canvas
 
 
@@ -12,6 +14,10 @@ def _text_pdf_bytes(text: str = "Diabetes is a metabolic disease with insulin re
     pdf.drawString(72, 720, text)
     pdf.save()
     return buffer.getvalue()
+
+
+def _write_pdf(path, text: str) -> None:
+    path.write_bytes(_text_pdf_bytes(text))
 
 
 def _patch_successful_upload(app, monkeypatch):
@@ -105,6 +111,148 @@ def test_upload_vector_failure_degrades_to_text_only_record(client, app, monkeyp
     assert payload["eligible_for_medical_workflows"] is True
     after = app.state.services.document_service.list_documents()
     assert len(after) == len(before) + 1
+
+
+def test_legacy_diabetes_document_scope_is_backfilled_as_medical(app):
+    document_id = "legacy_diabetes"
+    _write_pdf(app.state.settings.upload_dir / f"{document_id}.pdf", "Diabetes patient clinical diagnosis and treatment physiology.")
+    app.state.settings.documents_registry_file.write_text(
+        '{"documents":[{"document_id":"legacy_diabetes","filename":"DIABETES.pdf","page_count":1,"chunk_count":1,"uploaded_at":"2026-01-01T00:00:00+00:00"}]}',
+        encoding="utf-8",
+    )
+
+    record = app.state.services.document_service.list_documents()[0]
+
+    assert record.scope_category == "medical"
+    assert record.eligible_for_medical_workflows is True
+
+
+def test_legacy_covid_document_scope_is_backfilled_as_medical(app):
+    document_id = "legacy_covid"
+    _write_pdf(app.state.settings.upload_dir / f"{document_id}.pdf", "COVID infection public health clinical patient hospital medicine.")
+    app.state.settings.documents_registry_file.write_text(
+        '{"documents":[{"document_id":"legacy_covid","filename":"covid.pdf","page_count":1,"chunk_count":1,"uploaded_at":"2026-01-01T00:00:00+00:00"}]}',
+        encoding="utf-8",
+    )
+
+    record = app.state.services.document_service.list_documents()[0]
+
+    assert record.scope_category == "medical"
+    assert record.eligible_for_medical_workflows is True
+
+
+def test_legacy_automata_document_scope_is_backfilled_as_non_medical(app):
+    document_id = "legacy_automata"
+    _write_pdf(app.state.settings.upload_dir / f"{document_id}.pdf", "Theory of languages automata regular expression context-free grammar Turing machine.")
+    app.state.settings.documents_registry_file.write_text(
+        '{"documents":[{"document_id":"legacy_automata","filename":"Cours_Theorie_des_Langages.pdf","page_count":1,"chunk_count":1,"uploaded_at":"2026-01-01T00:00:00+00:00"}]}',
+        encoding="utf-8",
+    )
+
+    record = app.state.services.document_service.list_documents()[0]
+
+    assert record.scope_category == "non_medical"
+    assert record.eligible_for_medical_workflows is False
+
+
+def test_legacy_document_without_text_is_unknown_unverified_and_ineligible(app):
+    app.state.settings.documents_registry_file.write_text(
+        '{"documents":[{"document_id":"missing_pdf","filename":"missing.pdf","page_count":1,"chunk_count":1,"uploaded_at":"2026-01-01T00:00:00+00:00"}]}',
+        encoding="utf-8",
+    )
+
+    record = app.state.services.document_service.list_documents()[0]
+
+    assert record.scope_category == "unknown_unverified"
+    assert record.eligible_for_medical_workflows is False
+
+
+def test_french_probability_pdf_upload_is_parseable_but_out_of_scope(client, app, monkeypatch):
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: None)
+    response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "probabilite.pdf",
+                _text_pdf_bytes("Probabilité évènement univers équiprobabilité urnes dés cartes arbres pondérés."),
+                "application/pdf",
+            )
+        },
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["scope_category"] == "non_medical"
+    assert payload["eligible_for_medical_workflows"] is False
+
+
+def test_pdf_loader_falls_back_to_pypdf_for_accented_math_text(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "probability.pdf"
+    _write_pdf(pdf_path, "Probabilité évènement univers intersection union.")
+    monkeypatch.setattr(
+        "langchain_community.document_loaders.PyPDFLoader.load",
+        lambda _self: (_ for _ in ()).throw(RuntimeError("primary parser failed")),
+    )
+
+    pages = PDFLoaderClient().load_pages(pdf_path)
+
+    assert pages
+    assert "Probabil" in pages[0].page_content
+
+
+def test_programming_pdf_upload_is_not_medical(client, app, monkeypatch):
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: None)
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("prog_C.pdf", _text_pdf_bytes("Programming manual Python compiler software documentation."), "application/pdf")},
+    )
+
+    payload = response.json()
+    assert payload["scope_category"] == "non_medical"
+    assert payload["eligible_for_medical_workflows"] is False
+
+
+def test_large_pdf_skips_vector_indexing_and_creates_text_fallback_record(client, app, monkeypatch):
+    pages = [
+        SimpleNamespace(page_content="Diabetes clinical medicine patient physiology.", metadata={"page": index})
+        for index in range(app.state.settings.max_vector_index_pages + 1)
+    ]
+    add_called = {"called": False}
+    monkeypatch.setattr(app.state.services.document_service.pdf_loader, "load_pages", lambda _path: pages)
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: add_called.update(called=True))
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("large_medical.pdf", b"%PDF-1.4\nlarge", "application/pdf")},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["status"] == "indexed_text_only"
+    assert payload["warnings"]
+    assert add_called["called"] is False
+    assert app.state.services.document_service.list_documents()[0].document_id == payload["document_id"]
+
+
+def test_large_chunk_count_skips_vector_indexing(client, app, monkeypatch):
+    pages = [SimpleNamespace(page_content="Diabetes clinical medicine patient physiology.", metadata={"page": 0})]
+    chunks = [
+        SimpleNamespace(page_content="Diabetes clinical medicine patient physiology.", metadata={"document_id": "x", "filename": "x.pdf", "page": 0, "chunk_id": f"c{i}"})
+        for i in range(app.state.settings.max_vector_index_chunks + 1)
+    ]
+    add_called = {"called": False}
+    monkeypatch.setattr(app.state.services.document_service.pdf_loader, "load_pages", lambda _path: pages)
+    monkeypatch.setattr(app.state.services.document_service, "_chunk_pages", lambda _pages: chunks)
+    monkeypatch.setattr(app.state.services.document_service.vectorstore_client, "add_documents", lambda _documents: add_called.update(called=True))
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("many_chunks.pdf", b"%PDF-1.4\nchunks", "application/pdf")},
+    )
+
+    assert response.json()["status"] == "indexed_text_only"
+    assert add_called["called"] is False
 
 
 def test_upload_chunking_failure_is_specific_and_preserves_registry(client, app, monkeypatch):

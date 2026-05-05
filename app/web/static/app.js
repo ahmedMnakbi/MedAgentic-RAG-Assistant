@@ -119,6 +119,7 @@ function formatDocumentScope(scope) {
     medical_adjacent: "Medical-adjacent",
     non_medical: "Out of scope",
     unknown: "Unknown scope",
+    unknown_unverified: "Unknown / not verified",
   };
   return labels[scope] || "Unknown scope";
 }
@@ -1011,7 +1012,9 @@ function bindStaticInteractions() {
     try {
       const payload = await api("/api/documents/upload", { method: "POST", body: data });
       status.textContent =
-        payload.status === "indexed_text_only"
+        payload.warnings?.length
+          ? `${payload.filename}: ${payload.warnings.join(" ")}`
+          : payload.status === "indexed_text_only"
           ? `Saved ${payload.filename} for direct PDF workflows. Vector indexing is unavailable, so retrieval will use PDF text fallback.`
           : `Indexed ${payload.filename} successfully.`;
       form.reset();

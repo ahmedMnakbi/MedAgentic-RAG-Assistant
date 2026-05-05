@@ -39,6 +39,10 @@ OUT_OF_SCOPE_ANSWER = (
     "MARA is designed for medical and health-learning content, so I can't summarize "
     "or generate quizzes from this source."
 )
+UNVERIFIED_SCOPE_ANSWER = (
+    "This document has not been verified as medical or health-learning content, "
+    "so MARA will not use it for medical workflows by default."
+)
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -164,11 +168,12 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
                 mode_used=mode,
                 enhanced_prompt=enhanced_prompt,
             )
-        if payload.document_ids and scope_state["out_of_scope_count"]:
+        if payload.document_ids and not scope_state["eligible_ids"] and scope_state["ineligible_count"]:
+            answer = OUT_OF_SCOPE_ANSWER if scope_state["non_medical_count"] else UNVERIFIED_SCOPE_ANSWER
             return AskResponse(
                 status="refused",
                 mode_used=mode if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"} else "refuse",
-                answer=OUT_OF_SCOPE_ANSWER,
+                answer=answer,
                 safety=safety,
                 enhanced_prompt=enhanced_prompt,
                 warnings=base_warnings + scope_warnings,
@@ -412,10 +417,20 @@ def _document_scope_state(services: SimpleNamespace, document_ids: list[str] | N
         for record in scoped_records
         if getattr(record, "eligible_for_medical_workflows", True)
     ]
-    out_of_scope_records = [
+    ineligible_records = [
         record
         for record in scoped_records
         if not getattr(record, "eligible_for_medical_workflows", True)
+    ]
+    non_medical_records = [
+        record
+        for record in ineligible_records
+        if getattr(record, "scope_category", "unknown_unverified") == "non_medical"
+    ]
+    unverified_records = [
+        record
+        for record in ineligible_records
+        if getattr(record, "scope_category", "unknown_unverified") in {"unknown", "unknown_unverified"}
     ]
     unknown_records = [
         record
@@ -424,16 +439,19 @@ def _document_scope_state(services: SimpleNamespace, document_ids: list[str] | N
         and hasattr(record, "eligible_for_medical_workflows")
     ]
     warnings: list[str] = []
-    if out_of_scope_records:
-        count = len(out_of_scope_records)
-        warnings.append(f"Skipped {count} out-of-scope document{'s' if count != 1 else ''}.")
+    if ineligible_records:
+        count = len(ineligible_records)
+        warnings.append(f"Skipped {count} document{'s' if count != 1 else ''} because they are not verified as medical-scope sources.")
     if unknown_records:
         count = len(unknown_records)
         warnings.append(f"{count} document{'s have' if count != 1 else ' has'} unknown scope and will be used with caution.")
     return {
         "has_records": bool(scoped_records),
         "eligible_ids": {getattr(record, "document_id") for record in eligible_records if getattr(record, "document_id", None)},
-        "out_of_scope_count": len(out_of_scope_records),
+        "ineligible_count": len(ineligible_records),
+        "out_of_scope_count": len(ineligible_records),
+        "non_medical_count": len(non_medical_records),
+        "unverified_count": len(unverified_records),
         "unknown_count": len(unknown_records),
         "warnings": warnings,
     }

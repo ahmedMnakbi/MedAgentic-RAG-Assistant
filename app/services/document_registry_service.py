@@ -27,6 +27,20 @@ class DocumentRegistryService:
             documents.append(document.model_dump())
             self._write(payload)
 
+    def update_document(self, document: DocumentRecord) -> None:
+        with self._lock:
+            payload = self._read()
+            documents = payload.setdefault("documents", [])
+            updated = False
+            for index, item in enumerate(documents):
+                current = DocumentRecord.model_validate(item)
+                if current.document_id == document.document_id:
+                    documents[index] = document.model_dump()
+                    updated = True
+                    break
+            if updated:
+                self._write(payload)
+
     def remove_document(self, document_id: str) -> DocumentRecord | None:
         with self._lock:
             payload = self._read()
@@ -64,7 +78,11 @@ class DocumentRegistryService:
             ) from exc
 
     def _write(self, payload: dict) -> None:
-        self.settings.documents_registry_file.write_text(
+        temp_path = self.settings.documents_registry_file.with_suffix(
+            self.settings.documents_registry_file.suffix + ".tmp"
+        )
+        temp_path.write_text(
             json.dumps(payload, indent=2),
             encoding="utf-8",
         )
+        temp_path.replace(self.settings.documents_registry_file)

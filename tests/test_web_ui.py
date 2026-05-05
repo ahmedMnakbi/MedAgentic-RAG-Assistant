@@ -51,6 +51,7 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "Medical-adjacent" in script
     assert "Out of scope" in script
     assert "Unknown scope" in script
+    assert "Unknown / not verified" in script
     assert "danger-outline-button" in script
     assert "enhance_prompt: false" in script
     assert "enhance-prompt-toggle" not in script
