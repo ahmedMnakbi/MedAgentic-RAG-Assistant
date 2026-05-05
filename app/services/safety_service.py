@@ -25,6 +25,10 @@ class SafetyService:
         self.dosage_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
+                r"\bwhat (?:dose|dosage)\b.*\blethal\b",
+                r"\blethal (?:dose|dosage)\b",
+                r"\bhow much\b.*\blethal\b",
+                r"\bhow many pills\b.*\b(kill|die|overdose)\b",
                 r"\bhow many\s*(mg|mcg|g|ml|tablets|pills|capsules)\b",
                 r"\bhow much\b.*\bshould i take\b",
                 r"\bwhat dose should i take\b",
@@ -43,9 +47,10 @@ class SafetyService:
         )
         self.dosage_term_pattern = re.compile(r"\b(dose|dosage|dosing)\b", re.IGNORECASE)
         self.dosage_advice_pattern = re.compile(
-            r"\b(good|safe|correct|appropriate|recommended|enough|too much|too little|should i take)\b",
+            r"\b(good|safe|correct|appropriate|recommended|enough|too much|too little|should i take|lethal|kill|die)\b",
             re.IGNORECASE,
         )
+        self.ld50_pattern = re.compile(r"\bld\s*50\b|\bld50\b", re.IGNORECASE)
         self.triage_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
@@ -112,6 +117,7 @@ class SafetyService:
         ]
 
     def assess(self, question: str) -> SafetyAssessment:
+        checked_question = self._strip_safety_boilerplate(question)
         if self._is_unsafe_overdose_or_self_harm_request(question):
             return SafetyAssessment(
                 allowed=False,
@@ -120,7 +126,7 @@ class SafetyService:
                 level="level_3",
                 safe_completion=self.safe_completion(question, "unsafe_triage"),
             )
-        if self._matches_any(question, self.triage_patterns):
+        if self._matches_any(checked_question, self.triage_patterns):
             return SafetyAssessment(
                 allowed=False,
                 category="unsafe_triage",
@@ -232,28 +238,64 @@ class SafetyService:
     @staticmethod
     def _strip_safety_boilerplate(text: str) -> str:
         """Ignore safety constraints that mention unsafe categories as things to avoid."""
-        return re.sub(
+        stripped = re.sub(
             r"\b(?:do not|don't|avoid|without|no|must not|cannot|can't|should not)\b"
             r"[^.\n;]{0,160}\bpersonalized treatment\b[^.\n;]*",
             " ",
             text,
             flags=re.IGNORECASE,
         )
+        stripped = re.sub(
+            r"\b(?:do not|don't|avoid|without|no|must not|cannot|can't|should not)\b"
+            r"[^.\n;]{0,180}\b(self[- ]?harm|lethal[- ]?dose|lethal dose|actionable dosing|dosage|dose|dosing)\b"
+            r"[^.\n;]*",
+            " ",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        return stripped
 
     def _is_unsafe_dosage_request(self, question: str) -> bool:
-        lowered = question.lower()
+        checked = self._strip_safety_boilerplate(question)
+        lowered = checked.lower()
+        if self._is_allowed_toxicology_education(question):
+            return False
         if "how many pills" in lowered and "overdose" in lowered:
             return True
-        if self._matches_any(question, self.dosage_patterns):
+        if self.ld50_pattern.search(checked) and re.search(r"\b(of|for humans?|ibuprofen|insulin|chemotherapy)\b", lowered):
+            return True
+        if self._matches_any(checked, self.dosage_patterns):
             return True
 
-        has_unit = bool(self.dosage_unit_pattern.search(question))
-        has_dosage_term = bool(self.dosage_term_pattern.search(question))
-        has_advice_term = bool(self.dosage_advice_pattern.search(question))
+        has_unit = bool(self.dosage_unit_pattern.search(checked))
+        has_dosage_term = bool(self.dosage_term_pattern.search(checked))
+        has_advice_term = bool(self.dosage_advice_pattern.search(checked))
         return has_unit and (has_dosage_term or has_advice_term)
 
     def _is_unsafe_overdose_or_self_harm_request(self, question: str) -> bool:
-        lowered = question.lower().strip()
+        if self._is_allowed_toxicology_education(question):
+            return False
+        checked = self._strip_safety_boilerplate(question)
+        lowered = checked.lower().strip()
         if "overdose" in lowered and self.educational_overdose_pattern.search(question):
             return False
-        return self._matches_any(question, self.triage_patterns)
+        return self._matches_any(checked, self.triage_patterns)
+
+    def _is_allowed_toxicology_education(self, question: str) -> bool:
+        lowered = question.lower()
+        educational = bool(
+            re.search(
+                r"\b(explain|overview|concept|principles|pharmacology|toxicokinetics|toxicodynamics|toxidromes?|medical students?|toxicology students?|educational)\b",
+                lowered,
+            )
+        )
+        toxicology_topic = bool(re.search(r"\b(overdose|ld\s*50|ld50|toxicology|toxicokinetics|toxicodynamics|toxidromes?)\b", lowered))
+        has_safety_constraint = bool(
+            re.search(r"\b(without|do not|don't|no)\b[^.\n;]{0,180}\b(dose|dosing|dosage|lethal|self[- ]?harm|actionable)\b", lowered)
+        )
+        asks_specific_lethal = bool(re.search(r"\b(dose .*lethal|how much .*lethal|how many pills)\b", lowered))
+        specific_substance_ld50 = bool(
+            self.ld50_pattern.search(question)
+            and re.search(r"\b(of\s+(?:ibuprofen|insulin|chemotherapy|acetaminophen|paracetamol|opioids?|benzodiazepines?)|for humans?)\b", lowered)
+        )
+        return educational and toxicology_topic and has_safety_constraint and not asks_specific_lethal and not specific_substance_ld50

@@ -5,6 +5,7 @@ import re
 from app.clients.groq_client import GroqClient
 from app.core.config import Settings
 from app.schemas.prompt_enhancement import PromptEnhanceV2Request, PromptEnhanceV2Response
+from app.services.medical_scope_service import MedicalScopeService
 from app.services.safety_service import SafetyService
 from app.utils.text import normalize_whitespace
 
@@ -85,6 +86,12 @@ class PromptEnhancerV2Service:
         lowered = raw.lower()
         safety = self.safety_service.assess(raw)
         blocked_category = self._blocked_prompt_category(raw, safety.category)
+        source_intent_present = bool(URL_PATTERN.search(raw)) or any(term in lowered for term in DOCUMENT_REFERENCE_TERMS) or any(
+            term in lowered
+            for term in ("full text", "full-text", "real articles", "not just abstracts", "open literature", "pubmed", "pmid", "ncbi")
+        )
+        if not blocked_category and not source_intent_present and MedicalScopeService.is_clearly_non_medical_request(raw):
+            blocked_category = "out_of_scope"
         inferred_mode = "unsafe_refusal" if blocked_category else self._infer_mode(request, lowered)
         source_scope = self._infer_scope(request, inferred_mode, lowered)
         full_text_required = (
@@ -216,7 +223,7 @@ class PromptEnhancerV2Service:
         cleaned = re.sub(r"https?://\S+", " ", text, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bnot\s+just\s+abstracts?\b", " ", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(
-            r"\b(explain|summarize|simplify|quiz|make|create|find|search|compare|from|about|this|pdf|uploaded|article|articles|studies|real|full|text|abstracts?)\b",
+            r"\b(explain|summarize|simplify|quiz|make|create|find|search|compare|from|about|reviews?|this|pdf|uploaded|article|articles|studies|real|full|text|abstracts?)\b",
             " ",
             cleaned,
             flags=re.IGNORECASE,
@@ -226,6 +233,8 @@ class PromptEnhancerV2Service:
     @staticmethod
     def _open_literature_query(topic: str, *, full_text_required: bool) -> str:
         query = normalize_whitespace(topic).lstrip("-: ")
+        query = re.sub(r"^(?:about|reviews?)\s+", "", query, flags=re.IGNORECASE)
+        query = normalize_whitespace(query)
         if "diabetes" in query.lower() and "mellitus" not in query.lower():
             query = re.sub(r"\bdiabetes\b", "diabetes mellitus", query, count=1, flags=re.IGNORECASE)
         if full_text_required and not re.search(r"\bfull[- ]?text\b", query, flags=re.IGNORECASE):
@@ -616,6 +625,8 @@ class PromptEnhancerV2Service:
                 "If this is about a possible overdose or poisoning, contact emergency services or a poison control "
                 "center immediately. MARA will not create or send this as an executable prompt."
             )
+        if category == "out_of_scope":
+            return "MARA is focused on medical and health-learning workflows, so I can't help with this non-medical request."
         if category == "unsafe_diagnosis":
             return "This request asks for diagnosis of a specific person, so MARA will not send it as an executable task."
         if category == "unsafe_dosage":
@@ -628,6 +639,8 @@ class PromptEnhancerV2Service:
     def _blocked_warning(category: str) -> str:
         if category in {"unsafe_self_harm_or_abusive", "unsafe_overdose_or_poisoning"}:
             return "This request was blocked because it is not a safe medical-learning task."
+        if category == "out_of_scope":
+            return "This request was blocked because it is outside MARA's medical education scope."
         return "This unsafe clinical request was blocked instead of being sent to Assistant Lab."
 
     @staticmethod

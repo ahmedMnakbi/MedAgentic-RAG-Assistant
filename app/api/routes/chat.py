@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 
 from app.schemas.chat import AskRequest, AskResponse
 from app.schemas.open_literature import OpenLiteratureSearchRequest
+from app.services.medical_scope_service import MedicalScopeService
 from app.services.rag_service import RetrievedChunk
 from app.utils.text import normalize_whitespace, strip_unsafe_guidance
 
@@ -84,6 +85,14 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         )
 
     if mode == "general_education":
+        if MedicalScopeService.is_clearly_non_medical_request(payload.question):
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer="MARA is focused on medical and health-learning workflows, so I can't help with this non-medical request.",
+                safety=safety,
+                warnings=base_warnings + ["This request is outside MARA's medical education scope."],
+            )
         answer = services.general_education_service.answer(payload.question)
         answer, post_warnings, refused = _post_process_answer(services, answer)
         if refused:

@@ -768,6 +768,7 @@ function promptEnhancementHandoffTask(payload, resultShell) {
 
 function setAssistantModeFromEnhancement(inferredMode) {
   const modeSelect = document.getElementById("chat-mode");
+  const allDocsToggle = document.getElementById("all-docs-toggle");
   const modeMap = {
     document_rag: "document_rag",
     rag: "rag",
@@ -780,6 +781,9 @@ function setAssistantModeFromEnhancement(inferredMode) {
   const nextMode = modeMap[inferredMode] || "auto";
   if (Array.from(modeSelect.options).some((option) => option.value === nextMode)) {
     modeSelect.value = nextMode;
+  }
+  if (inferredMode === "general_education" && allDocsToggle) {
+    allDocsToggle.checked = false;
   }
 }
 

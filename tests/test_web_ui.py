@@ -32,6 +32,8 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "shell.dataset.optimizedTask = optimizedTask;" in script
     assert "shell.dataset.originalInput = payload.original_input || \"\";" in script
     assert "setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || \"auto\");" in script
+    assert "if (inferredMode === \"general_education\" && allDocsToggle)" in script
+    assert "allDocsToggle.checked = false;" in script
     assert "promptEnhancementHandoffTask(state.latestPromptEnhanceV2, resultShell)" in script
     assert "const assistantButton = payload.can_send_to_assistant" in script
     assert "data-enhanced-to-chat=\"true\">Send to Assistant Lab</button>`" in script

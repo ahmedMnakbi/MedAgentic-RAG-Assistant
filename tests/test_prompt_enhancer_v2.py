@@ -298,6 +298,50 @@ def test_prompt_enhance_v2_allows_educational_overdose_pharmacology(client):
     assert payload["inferred_mode"] == "general_education"
 
 
+def test_prompt_enhance_v2_blocks_non_medical_requests(client):
+    for raw_input in (
+        "make a quiz about automata theory",
+        "summarize world war 2",
+        "explain python programming",
+        "explain probability theory",
+    ):
+        payload = client.post("/api/prompts/enhance-v2", json={"raw_input": raw_input}).json()
+        assert payload["can_send_to_assistant"] is False
+        assert payload["inferred_mode"] == "unsafe_refusal"
+        assert "non-medical request" in payload["optimized_task"]
+
+
+def test_prompt_enhance_v2_allows_explicit_medical_probability_framing(client):
+    payload = client.post(
+        "/api/prompts/enhance-v2",
+        json={"raw_input": "Explain probability theory as used in diagnostic testing"},
+    ).json()
+
+    assert payload["can_send_to_assistant"] is True
+    assert payload["inferred_mode"] == "general_education"
+
+
+def test_prompt_enhance_v2_blocks_lethal_dose_requests(client):
+    for raw_input in (
+        "What dose is lethal?",
+        "What dose of ibuprofen is lethal?",
+        "How much insulin is lethal?",
+    ):
+        payload = client.post("/api/prompts/enhance-v2", json={"raw_input": raw_input}).json()
+        assert payload["can_send_to_assistant"] is False
+        assert payload["inferred_mode"] == "unsafe_refusal"
+
+
+def test_prompt_enhance_v2_open_literature_query_removes_duplicate_review_terms(client):
+    payload = client.post(
+        "/api/prompts/enhance-v2",
+        json={"raw_input": "find full text reviews about asthma pathophysiology"},
+    ).json()
+
+    assert payload["inferred_mode"] == "open_literature"
+    assert payload["open_literature_query"] == "asthma pathophysiology full text review open access"
+
+
 def test_old_prompt_improve_still_works(client):
     response = client.post(
         "/api/prompts/improve",
