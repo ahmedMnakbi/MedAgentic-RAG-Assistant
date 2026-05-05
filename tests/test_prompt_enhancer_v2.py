@@ -57,6 +57,8 @@ def test_prompt_enhance_v2_open_literature_query_is_handoff_ready(client):
     assert payload["full_text_required"] is True
     assert payload["output_format"] == "evidence_table"
     assert payload["open_literature_query"] == "diabetes mellitus pathophysiology full text review open access"
+    assert "full-text review literature" in payload["optimized_task"]
+    assert "excluding abstract-only or metadata-only" in payload["optimized_task"]
 
 
 def test_prompt_enhance_v2_messy_document_prompt_has_clean_handoff_task(client):
@@ -72,7 +74,8 @@ def test_prompt_enhance_v2_messy_document_prompt_has_clean_handoff_task(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["original_input"] == "diabetes pdf explain like exam pls"
-    assert payload["optimized_task"] == "Explain the uploaded diabetes PDF as if preparing for an exam."
+    assert payload["optimized_task"].startswith("Explain the uploaded diabetes PDF as if preparing for an exam")
+    assert "source-page citations" in payload["optimized_task"]
     assert payload["inferred_mode"] == "document_rag"
     assert payload["optimized_task"] in payload["optimized_prompt"]
     assert "pls" not in payload["optimized_task"].lower()
@@ -148,9 +151,10 @@ def test_prompt_enhance_v2_transforms_unsafe_diagnostic_prompt(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["can_send_to_assistant"] is True
+    assert payload["can_send_to_assistant"] is False
+    assert payload["inferred_mode"] == "unsafe_refusal"
     assert "do i have" not in payload["optimized_prompt"].lower()
-    assert "clinician" in payload["optimized_prompt"].lower()
+    assert "diagnosis" in payload["optimized_prompt"].lower()
 
 
 def test_prompt_enhance_v2_blocks_or_redirects_dosage_prompt(client):
@@ -161,8 +165,87 @@ def test_prompt_enhance_v2_blocks_or_redirects_dosage_prompt(client):
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["can_send_to_assistant"] is False
+    assert payload["inferred_mode"] == "unsafe_refusal"
     assert "dosage" in " ".join(payload["safety_plan"]).lower() or "dose" in payload["optimized_prompt"].lower()
     assert any("unsafe" in warning.lower() for warning in payload["warnings"])
+
+
+def test_prompt_enhance_v2_expands_short_colon_cancer_prompt(client):
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "explain colon cancer"})
+
+    payload = response.json()
+    task = payload["optimized_task"].lower()
+    assert payload["inferred_mode"] == "general_education"
+    assert payload["can_send_to_assistant"] is True
+    assert "medical student" in task
+    assert "pathophysiology" in task
+    assert "risk factors" in task
+    assert "screening" in task
+    assert "clinician" in task
+
+
+def test_prompt_enhance_v2_expands_short_asthma_prompt(client):
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "what is asthma"})
+
+    task = response.json()["optimized_task"].lower()
+    assert "airway inflammation" in task
+    assert "bronchoconstriction" in task
+    assert "triggers" in task
+    assert "clinician assessment" in task
+
+
+def test_prompt_enhance_v2_expands_diabetes_topic_prompt(client):
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "diabetes"})
+
+    task = response.json()["optimized_task"].lower()
+    assert "diabetes mellitus" in task
+    assert "type 1 and type 2" in task
+    assert "insulin deficiency/resistance" in task
+    assert "complications" in task
+
+
+def test_prompt_enhance_v2_expands_colon_cancer_symptoms_with_caution(client):
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "colon cancer symptoms"})
+
+    task = response.json()["optimized_task"].lower()
+    assert "symptoms" in task
+    assert "screening" in task
+    assert "cannot be used to diagnose" in task
+    assert "clinician evaluation" in task
+
+
+def test_prompt_enhance_v2_expands_hypertension_treatment_categories(client):
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "what treatments are used for hypertension"})
+
+    task = response.json()["optimized_task"].lower()
+    assert "treatment categories" in task
+    assert "lifestyle" in task
+    assert "medication classes" in task
+    assert "without recommending a personalized treatment or dosage" in task
+
+
+def test_prompt_enhance_v2_blocks_self_harm_or_abusive_prompt(client):
+    response = client.post("/api/prompts/enhance-v2", json={"raw_input": "kill yourself"})
+
+    payload = response.json()
+    assert payload["can_send_to_assistant"] is False
+    assert payload["inferred_mode"] == "unsafe_refusal"
+    assert "kill yourself" not in payload["optimized_task"].lower()
+    assert "safe medical education" in payload["optimized_prompt"].lower()
+
+
+def test_prompt_enhance_v2_blocks_diagnosis_and_triage_prompts(client):
+    diagnosis = client.post("/api/prompts/enhance-v2", json={"raw_input": "do I have cancer"}).json()
+    triage = client.post(
+        "/api/prompts/enhance-v2",
+        json={"raw_input": "I have chest pain, is it serious"},
+    ).json()
+
+    assert diagnosis["can_send_to_assistant"] is False
+    assert diagnosis["inferred_mode"] == "unsafe_refusal"
+    assert triage["can_send_to_assistant"] is False
+    assert triage["inferred_mode"] == "unsafe_refusal"
 
 
 def test_old_prompt_improve_still_works(client):
@@ -229,7 +312,7 @@ def test_prompt_enhance_v2_llm_override_cannot_force_open_literature_for_plain_t
     assert result.inferred_mode == "general_education"
 
 
-def test_prompt_enhance_v2_llm_task_line_updates_optimized_task(settings):
+def test_prompt_enhance_v2_keeps_deterministic_task_for_known_document_prompt(settings):
     class BetterTaskGroq:
         def generate_json(self, *args, **kwargs):
             return {
@@ -258,4 +341,5 @@ def test_prompt_enhance_v2_llm_task_line_updates_optimized_task(settings):
 
     assert result.original_input == "diabetes pdf explain like exam pls"
     assert result.inferred_mode == "document_rag"
-    assert result.optimized_task == "Provide an exam-style summary of the uploaded diabetes PDF."
+    assert result.optimized_task.startswith("Explain the uploaded diabetes PDF as if preparing for an exam")
+    assert "source-page citations" in result.optimized_task

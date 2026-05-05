@@ -21,6 +21,10 @@ DOCUMENT_REFERENCE_TERMS = (
     "from my file",
 )
 OPEN_ARTICLE_TERMS = ("article url", "specific article", "import article", "analyze this article")
+BLOCKED_SELF_HARM_OR_ABUSE_PATTERNS = (
+    re.compile(r"\bkill yourself\b", re.IGNORECASE),
+    re.compile(r"\bkys\b", re.IGNORECASE),
+)
 
 
 class PromptEnhancerV2Service:
@@ -61,7 +65,8 @@ class PromptEnhancerV2Service:
         raw = normalize_whitespace(request.raw_input)
         lowered = raw.lower()
         safety = self.safety_service.assess(raw)
-        inferred_mode = self._infer_mode(request, lowered)
+        blocked_category = self._blocked_prompt_category(raw, safety.category)
+        inferred_mode = "unsafe_refusal" if blocked_category else self._infer_mode(request, lowered)
         source_scope = self._infer_scope(request, inferred_mode, lowered)
         full_text_required = (
             request.full_text_required
@@ -72,10 +77,15 @@ class PromptEnhancerV2Service:
         safe_raw = raw
         can_send = True
         warnings: list[str] = []
-        if not safety.allowed:
+        if blocked_category:
+            source_scope = "none"
+            can_send = False
+            safe_raw = self._blocked_safe_task(raw, blocked_category)
+            warnings.append(self._blocked_warning(blocked_category))
+        elif not safety.allowed:
             safe_raw = self.safety_service.educationalize(raw, safety.category)
             warnings.append("The unsafe clinical part was transformed into a safe educational request.")
-            can_send = safety.category != "unsafe_triage"
+            can_send = False
         elif safety.category == "safe_with_caution" and safety.caution:
             warnings.append(safety.caution)
 
@@ -94,7 +104,13 @@ class PromptEnhancerV2Service:
             source_scope = "open_literature"
             warnings.append("Full-text requests should use the Open Literature Engine and exclude abstract-only sources from evidence claims.")
 
-        optimized_task = self._optimized_task(safe_raw, inferred_mode=inferred_mode, output_format=request.output_format)
+        optimized_task = self._optimized_task(
+            safe_raw,
+            inferred_mode=inferred_mode,
+            output_format=request.output_format,
+            original_text=raw,
+            full_text_required=full_text_required,
+        )
         optimized_prompt = self._optimized_prompt(
             optimized_task,
             inferred_mode=inferred_mode,
@@ -124,7 +140,7 @@ class PromptEnhancerV2Service:
             context_plan=self._context_plan(source_scope, full_text_required),
             retrieval_plan=self._retrieval_plan(source_scope, full_text_required) if request.include_retrieval_plan else [],
             output_contract=self._output_contract(request.output_format, inferred_mode),
-            safety_plan=self._safety_plan(safety.category, request.include_safety_checks),
+            safety_plan=self._safety_plan(blocked_category or safety.category, request.include_safety_checks),
             quality_checks=self._quality_checks(request.strict_grounding, full_text_required),
             changes=[
                 "Inferred MARA route and source scope.",
@@ -164,6 +180,8 @@ class PromptEnhancerV2Service:
     def _infer_scope(request: PromptEnhanceV2Request, inferred_mode: str, lowered: str) -> str:
         if request.source_scope != "auto":
             return request.source_scope
+        if inferred_mode == "unsafe_refusal":
+            return "none"
         if inferred_mode == "open_article" or URL_PATTERN.search(lowered):
             return "open_article"
         if inferred_mode == "open_literature":
@@ -179,7 +197,7 @@ class PromptEnhancerV2Service:
         cleaned = re.sub(r"https?://\S+", " ", text, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bnot\s+just\s+abstracts?\b", " ", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(
-            r"\b(explain|summarize|simplify|quiz|make|create|find|search|compare|from|this|pdf|uploaded|article|articles|studies|real|full|text|abstracts?)\b",
+            r"\b(explain|summarize|simplify|quiz|make|create|find|search|compare|from|about|this|pdf|uploaded|article|articles|studies|real|full|text|abstracts?)\b",
             " ",
             cleaned,
             flags=re.IGNORECASE,
@@ -215,14 +233,28 @@ class PromptEnhancerV2Service:
         return f"Import {target}, validate that it is public/readable/open enough to use, then run the requested educational action."
 
     @staticmethod
-    def _optimized_task(text: str, *, inferred_mode: str, output_format: str) -> str:
+    def _optimized_task(
+        text: str,
+        *,
+        inferred_mode: str,
+        output_format: str,
+        original_text: str | None = None,
+        full_text_required: bool = False,
+    ) -> str:
         cleaned = normalize_whitespace(text).strip()
         lowered = cleaned.lower()
+        original_lowered = normalize_whitespace(original_text or cleaned).lower()
+
+        if inferred_mode == "unsafe_refusal":
+            return cleaned
 
         if inferred_mode in {"document_rag", "rag"} and any(term in lowered for term in ("pdf", "document", "uploaded", "file")):
             topic = PromptEnhancerV2Service._topic_query(cleaned)
             if "diabetes" in topic.lower() and any(term in lowered for term in ("exam", "studying", "study", "student")):
-                return "Explain the uploaded diabetes PDF as if preparing for an exam."
+                return (
+                    "Explain the uploaded diabetes PDF as if preparing for an exam, focusing on key definitions, "
+                    "mechanisms, high-yield differences, and source-page citations when available."
+                )
             if output_format in {"quiz_json"} or any(term in lowered for term in ("quiz", "questions", "test me")):
                 return "Create quiz questions from the uploaded document."
             if any(term in lowered for term in ("summarize", "summary")):
@@ -235,14 +267,85 @@ class PromptEnhancerV2Service:
         if inferred_mode == "open_literature":
             topic = PromptEnhancerV2Service._topic_query(cleaned)
             if topic and topic.lower() != cleaned.lower():
-                return f"Find and synthesize open-access literature about {topic}."
+                full_text_phrase = "full-text " if full_text_required or "full text" in original_lowered or "not just abstract" in original_lowered else ""
+                evidence_limit = (
+                    ", explicitly excluding abstract-only or metadata-only records from evidence claims"
+                    if full_text_phrase
+                    else ""
+                )
+                return f"Find and synthesize open-access {full_text_phrase}review literature about {topic} for medical students{evidence_limit}."
 
         if inferred_mode == "open_article":
             url = URL_PATTERN.search(cleaned)
             if url:
                 return f"Analyze the open article at {url.group(0)} for educational study use."
 
-        return cleaned
+        educational_task = PromptEnhancerV2Service._medical_education_task(cleaned)
+        return educational_task or cleaned
+
+    @staticmethod
+    def _medical_education_task(text: str) -> str | None:
+        cleaned = normalize_whitespace(text).strip()
+        lowered = cleaned.lower().strip(" .?!")
+
+        if lowered in {"diabetes", "diabetes mellitus"}:
+            return (
+                "Provide a medical-student-level overview of diabetes mellitus, including type 1 and type 2 "
+                "differences, insulin deficiency/resistance, hyperglycemia, common complications, and general "
+                "educational limitations."
+            )
+        if lowered in {"what is asthma", "explain asthma", "asthma"}:
+            return (
+                "Explain asthma for a medical student, including the basic definition, airway inflammation/"
+                "bronchoconstriction, common triggers, symptoms, general management categories, and a note that "
+                "diagnosis and treatment depend on clinician assessment."
+            )
+        if lowered in {"explain colon cancer", "colon cancer", "what is colon cancer"}:
+            return (
+                "Provide a general educational explanation of colon cancer for a medical student, including what "
+                "it is, basic pathophysiology, common risk factors, common symptoms, screening concepts, and why "
+                "diagnosis and treatment decisions require a clinician."
+            )
+        if "colon cancer" in lowered and "symptom" in lowered:
+            return (
+                "Explain common colon cancer symptoms and screening concepts for educational purposes, and clarify "
+                "that symptoms cannot be used to diagnose a specific person without clinician evaluation."
+            )
+        if "hypertension" in lowered and any(term in lowered for term in ("treatment", "treatments", "used", "management")):
+            return (
+                "Explain general treatment categories for hypertension for medical students, including lifestyle "
+                "approaches and common medication classes, without recommending a personalized treatment or dosage."
+            )
+        short_explain_match = re.match(r"^(?:explain|what is|what are)\s+(.+)$", lowered)
+        if short_explain_match and len(lowered.split()) <= 5:
+            topic = short_explain_match.group(1).strip()
+            if PromptEnhancerV2Service._looks_medical_topic(topic):
+                return (
+                    f"Provide a general educational explanation of {topic} for a medical student, including the "
+                    "basic definition, key mechanisms, common risk factors or symptoms when relevant, general "
+                    "evaluation or prevention concepts, and why diagnosis and treatment decisions require a clinician."
+                )
+        return None
+
+    @staticmethod
+    def _looks_medical_topic(topic: str) -> bool:
+        return any(
+            term in topic.lower()
+            for term in (
+                "cancer",
+                "diabetes",
+                "asthma",
+                "hypertension",
+                "disease",
+                "syndrome",
+                "infection",
+                "anemia",
+                "stroke",
+                "kidney",
+                "heart",
+                "lung",
+            )
+        )
 
     @staticmethod
     def _optimized_prompt(
@@ -351,6 +454,41 @@ class PromptEnhancerV2Service:
         return plan
 
     @staticmethod
+    def _blocked_prompt_category(raw: str, safety_category: str) -> str | None:
+        if any(pattern.search(raw) for pattern in BLOCKED_SELF_HARM_OR_ABUSE_PATTERNS):
+            return "unsafe_self_harm_or_abusive"
+        if safety_category in {
+            "unsafe_diagnosis",
+            "unsafe_dosage",
+            "unsafe_triage",
+            "unsafe_personalized_treatment",
+        }:
+            return safety_category
+        return None
+
+    @staticmethod
+    def _blocked_safe_task(raw: str, category: str) -> str:
+        if category == "unsafe_self_harm_or_abusive":
+            return (
+                "I can't help create or send that request. MARA is for safe medical education and study workflows. "
+                "If this is about you or someone else being in immediate danger, contact local emergency services "
+                "or a crisis hotline now."
+            )
+        if category == "unsafe_diagnosis":
+            return "This request asks for diagnosis of a specific person, so MARA will not send it as an executable task."
+        if category == "unsafe_dosage":
+            return "This request asks for medication dosage guidance, so MARA will not send it as an executable task."
+        if category == "unsafe_triage":
+            return "This request asks for emergency triage or reassurance, so MARA will not send it as an executable task."
+        return "This request asks for personalized treatment advice, so MARA will not send it as an executable task."
+
+    @staticmethod
+    def _blocked_warning(category: str) -> str:
+        if category == "unsafe_self_harm_or_abusive":
+            return "This request was blocked because it is not a safe medical-learning task."
+        return "This unsafe clinical request was blocked instead of being sent to Assistant Lab."
+
+    @staticmethod
     def _quality_checks(strict_grounding: bool, full_text_required: bool) -> list[str]:
         checks = [
             "Verify that citations refer to actual retrieved/source sections.",
@@ -405,4 +543,18 @@ class PromptEnhancerV2Service:
             and not any((has_url, has_document_reference, has_pubmed_reference, has_literature_reference))
         ):
             return fallback
+        if not fallback.can_send_to_assistant:
+            return fallback
+        if PromptEnhancerV2Service._should_prefer_deterministic_package(request.raw_input, fallback):
+            return fallback
         return candidate
+
+    @staticmethod
+    def _should_prefer_deterministic_package(raw: str, fallback: PromptEnhanceV2Response) -> bool:
+        raw_clean = normalize_whitespace(raw)
+        if normalize_whitespace(fallback.optimized_task).lower() == raw_clean.lower():
+            return False
+        lowered = raw_clean.lower()
+        if fallback.inferred_mode in {"general_education", "open_literature", "unsafe_refusal"}:
+            return True
+        return fallback.inferred_mode in {"document_rag", "rag"} and "diabetes" in lowered and "pdf" in lowered

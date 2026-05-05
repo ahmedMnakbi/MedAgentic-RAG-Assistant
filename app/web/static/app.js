@@ -637,6 +637,9 @@ function renderPromptEnhanceV2(payload) {
         : ""
     }
   `;
+  const assistantButton = payload.can_send_to_assistant
+    ? `<button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>`
+    : "";
   shell.innerHTML = `
     <article class="result-card">
       <div class="result-topline">
@@ -652,7 +655,7 @@ function renderPromptEnhanceV2(payload) {
       <div class="prompt-template mono">${escapeHtml(payload.optimized_prompt)}</div>
       <div class="inline-actions">
         <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_prompt)}">Copy prompt</button>
-        <button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>
+        ${assistantButton}
         ${routeButtons}
       </div>
     </article>

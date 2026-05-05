@@ -68,6 +68,8 @@ class SafetyService:
                 r"\bwhat should i take for\b",
                 r"\bwhat medication should i take\b",
                 r"\bwhat treatment should i get\b",
+                r"\bwhat treatment\b.*\b(best|right|recommended)\b.*\b(my|me)\b",
+                r"\b(best|right|recommended)\s+treatment\b.*\b(my|me)\b",
                 r"\bcreate a treatment plan for me\b",
                 r"\bpersonalized treatment\b",
                 r"\bfor my symptoms\b",
