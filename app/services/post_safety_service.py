@@ -11,7 +11,8 @@ class PostSafetyService:
         self.unsafe_answer_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in (
-                r"\byou (have|likely have|probably have|definitely have)\b",
+                r"\byou (likely have|probably have|definitely have)\b",
+                r"(?<!\bif\s)\byou have\b[^.\n;]{0,80}\b(diagnosis|diabetes|cancer|infection|disease)\b",
                 r"\bthis (means|confirms|rules out)\b.*\b(diagnosis|diabetes|cancer|infection|disease)\b",
                 r"\bthis is\s+(a|an)?\s*(diagnosis|diabetes|cancer|infection|disease)\b",
                 r"\btake \d+(\.\d+)?\s*(mg|mcg|g|ml|tablets?|pills?|capsules?)\b",

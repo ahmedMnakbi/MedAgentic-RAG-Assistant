@@ -32,7 +32,14 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "shell.dataset.optimizedTask = optimizedTask;" in script
     assert "shell.dataset.originalInput = payload.original_input || \"\";" in script
     assert "setAssistantModeFromEnhancement(resultShell.dataset.inferredMode || \"auto\");" in script
+    assert "if (inferredMode === \"general_education\" && allDocsToggle)" in script
+    assert "allDocsToggle.checked = false;" in script
     assert "promptEnhancementHandoffTask(state.latestPromptEnhanceV2, resultShell)" in script
+    assert "const assistantButton = payload.can_send_to_assistant" in script
+    assert "data-enhanced-to-chat=\"true\">Send to Assistant Lab</button>`" in script
+    assert "if (!payload.can_send_to_assistant || payload.inferred_mode === \"unsafe_refusal\")" in script
+    assert "<h3>Request blocked</h3>" in script
+    assert "Copy message" in script
     assert "function promptEnhancementHandoffTask(payload, resultShell)" in script
     assert "const fromPayload = cleanOptimizedTask(payload || {});" in script
     assert "function cleanTaskText(value)" in script
@@ -45,8 +52,13 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "cleanOpenLiteratureQuery(payload)" in script
     assert "fullTextInput.checked = resultShell.dataset.fullTextRequired === \"true\";" in script
     assert "formatIndexingStatus(doc.indexing_status)" in script
+    assert "formatDocumentScope(doc.scope_category)" in script
     assert "Vector indexed" in script
     assert "Text fallback" in script
+    assert "Medical-adjacent" in script
+    assert "Out of scope" in script
+    assert "Unknown scope" in script
+    assert "Unknown / not verified" in script
     assert "danger-outline-button" in script
     assert "enhance_prompt: false" in script
     assert "enhance-prompt-toggle" not in script

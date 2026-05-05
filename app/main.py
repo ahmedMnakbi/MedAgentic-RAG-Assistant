@@ -20,6 +20,7 @@ from app.core.exceptions import AppError
 from app.schemas.common import ErrorResponse
 from app.services.answer_service import AnswerService
 from app.services.document_registry_service import DocumentRegistryService
+from app.services.document_scope_service import DocumentScopeService
 from app.services.document_service import DocumentService
 from app.services.document_workflow_service import DocumentWorkflowService
 from app.services.general_education_service import GeneralEducationService
@@ -55,6 +56,7 @@ def build_services(settings: Settings) -> SimpleNamespace:
     vectorstore_client = VectorStoreClient(settings, embeddings_client)
     groq_client = GroqClient(settings)
     document_registry_service = DocumentRegistryService(settings)
+    document_scope_service = DocumentScopeService()
     rag_service = RagService(settings, vectorstore_client)
     prompt_library_service = PromptLibraryService(settings=settings, groq_client=groq_client)
     safety_service = SafetyService()
@@ -68,6 +70,13 @@ def build_services(settings: Settings) -> SimpleNamespace:
     summarization_service = SummarizationService(groq_client=groq_client)
     simplification_service = SimplificationService(groq_client=groq_client)
     quiz_service = QuizService(groq_client=groq_client)
+    document_service = DocumentService(
+        settings=settings,
+        pdf_loader=PDFLoaderClient(),
+        vectorstore_client=vectorstore_client,
+        registry_service=document_registry_service,
+        scope_service=document_scope_service,
+    )
     return SimpleNamespace(
         safety_service=safety_service,
         router_service=RouterService(),
@@ -78,12 +87,8 @@ def build_services(settings: Settings) -> SimpleNamespace:
             groq_client=groq_client,
         ),
         prompt_library_service=prompt_library_service,
-        document_service=DocumentService(
-            settings=settings,
-            pdf_loader=PDFLoaderClient(),
-            vectorstore_client=vectorstore_client,
-            registry_service=document_registry_service,
-        ),
+        document_service=document_service,
+        document_scope_service=document_scope_service,
         rag_service=rag_service,
         answer_service=answer_service,
         general_education_service=GeneralEducationService(settings=settings, groq_client=groq_client),
@@ -97,6 +102,7 @@ def build_services(settings: Settings) -> SimpleNamespace:
             simplification_service=simplification_service,
             quiz_service=quiz_service,
             answer_service=answer_service,
+            document_service=document_service,
         ),
         pubmed_service=PubMedService(ncbi_client=ncbi_client),
         open_article_service=open_article_service,

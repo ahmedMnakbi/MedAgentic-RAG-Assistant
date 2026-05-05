@@ -74,7 +74,7 @@ function renderDocuments() {
             <span>ID: <span class="mono">${escapeHtml(doc.document_id)}</span></span>
             <span>${doc.page_count} pages</span>
             <span>${doc.chunk_count} chunks</span>
-            <span>${escapeHtml(formatIndexingStatus(doc.indexing_status))}</span>
+            <span>${escapeHtml(formatIndexingStatus(doc.indexing_status))} · ${escapeHtml(formatDocumentScope(doc.scope_category))}</span>
           </div>
           <p class="microcopy">Uploaded ${new Date(doc.uploaded_at).toLocaleString()}</p>
         </article>
@@ -111,6 +111,17 @@ function formatIndexingStatus(status) {
     indexed_text_only: "Text fallback",
   };
   return labels[status] || "Vector indexed";
+}
+
+function formatDocumentScope(scope) {
+  const labels = {
+    medical: "Medical",
+    medical_adjacent: "Medical-adjacent",
+    non_medical: "Out of scope",
+    unknown: "Unknown scope",
+    unknown_unverified: "Unknown / not verified",
+  };
+  return labels[scope] || "Unknown scope";
 }
 
 function cleanOpenLiteratureQuery(payload) {
@@ -626,6 +637,37 @@ function renderPromptEnhanceV2(payload) {
         : ""
     }
   `;
+  const assistantButton = payload.can_send_to_assistant
+    ? `<button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>`
+    : "";
+  if (!payload.can_send_to_assistant || payload.inferred_mode === "unsafe_refusal") {
+    shell.innerHTML = `
+      <article class="result-card">
+        <div class="result-topline">
+          <span class="mode-badge">${escapeHtml(payload.inferred_mode || "unsafe_refusal")}</span>
+          <span class="mode-badge">blocked</span>
+        </div>
+        <h3>Request blocked</h3>
+        <div class="answer-body">${escapeHtml(payload.optimized_task || "MARA cannot create or send this request.")}</div>
+        ${(payload.warnings || []).map((warning) => `<span class="warning-chip">${escapeHtml(warning)}</span>`).join("")}
+        <div class="inline-actions">
+          <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_task || "")}">Copy message</button>
+        </div>
+      </article>
+      <details class="result-card">
+        <summary>Raw JSON</summary>
+        <div class="prompt-template mono">${escapeHtml(JSON.stringify(payload, null, 2))}</div>
+      </details>
+    `;
+    shell.dataset.optimizedTask = optimizedTask;
+    shell.dataset.optimizedPrompt = payload.optimized_prompt || "";
+    shell.dataset.originalInput = payload.original_input || "";
+    shell.dataset.inferredMode = payload.inferred_mode || "unsafe_refusal";
+    shell.dataset.openLiteratureQuery = "";
+    shell.dataset.fullTextRequired = String(inferFullTextRequired(payload));
+    shell.dataset.outputFormat = payload.output_format || "markdown";
+    return;
+  }
   shell.innerHTML = `
     <article class="result-card">
       <div class="result-topline">
@@ -641,7 +683,7 @@ function renderPromptEnhanceV2(payload) {
       <div class="prompt-template mono">${escapeHtml(payload.optimized_prompt)}</div>
       <div class="inline-actions">
         <button class="secondary-button" type="button" data-copy-text="${escapeHtml(payload.optimized_prompt)}">Copy prompt</button>
-        <button class="secondary-button" type="button" data-enhanced-to-chat="true">Send to Assistant Lab</button>
+        ${assistantButton}
         ${routeButtons}
       </div>
     </article>
@@ -726,6 +768,7 @@ function promptEnhancementHandoffTask(payload, resultShell) {
 
 function setAssistantModeFromEnhancement(inferredMode) {
   const modeSelect = document.getElementById("chat-mode");
+  const allDocsToggle = document.getElementById("all-docs-toggle");
   const modeMap = {
     document_rag: "document_rag",
     rag: "rag",
@@ -738,6 +781,9 @@ function setAssistantModeFromEnhancement(inferredMode) {
   const nextMode = modeMap[inferredMode] || "auto";
   if (Array.from(modeSelect.options).some((option) => option.value === nextMode)) {
     modeSelect.value = nextMode;
+  }
+  if (inferredMode === "general_education" && allDocsToggle) {
+    allDocsToggle.checked = false;
   }
 }
 
@@ -1001,7 +1047,9 @@ function bindStaticInteractions() {
     try {
       const payload = await api("/api/documents/upload", { method: "POST", body: data });
       status.textContent =
-        payload.status === "indexed_text_only"
+        payload.warnings?.length
+          ? `${payload.filename}: ${payload.warnings.join(" ")}`
+          : payload.status === "indexed_text_only"
           ? `Saved ${payload.filename} for direct PDF workflows. Vector indexing is unavailable, so retrieval will use PDF text fallback.`
           : `Indexed ${payload.filename} successfully.`;
       form.reset();

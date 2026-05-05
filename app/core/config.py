@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     )
 
     max_upload_size_mb: int = 100
+    max_vector_index_pages: int = 100
+    max_vector_index_chunks: int = 500
     retrieval_default_top_k: int = 4
     retrieval_strategy: str = "similarity"
     retrieval_fetch_k: int = 20

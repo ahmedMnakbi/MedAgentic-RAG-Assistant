@@ -90,3 +90,28 @@ def test_post_safety_checker_allows_general_disease_education():
 
     assert ok is True
     assert findings == []
+
+
+def test_post_safety_checker_allows_general_cancer_education_and_screening():
+    service = PostSafetyService(SafetyService())
+
+    ok, findings = service.check(
+        "Colon cancer is a disease of the large intestine discussed here for general education. "
+        "Common symptoms and screening concepts are not enough to diagnose a specific person, "
+        "and treatment decisions require clinician assessment."
+    )
+
+    assert ok is True
+    assert findings == []
+
+
+def test_post_safety_checker_allows_conditional_clinician_followup_language():
+    service = PostSafetyService(SafetyService())
+
+    ok, findings = service.check(
+        "If you have symptoms such as blood in the stool, clinicians may evaluate with screening "
+        "or diagnostic tests. This is general education, not a diagnosis."
+    )
+
+    assert ok is True
+    assert findings == []

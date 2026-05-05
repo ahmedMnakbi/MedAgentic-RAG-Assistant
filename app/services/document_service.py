@@ -12,6 +12,7 @@ from app.core.exceptions import EmptyPdfError, ExternalServiceError, InvalidPdfE
 from app.schemas.documents import DocumentDeleteResponse, DocumentRecord, DocumentUploadResponse
 from app.services.rag_service import RetrievedChunk
 from app.services.document_registry_service import DocumentRegistryService
+from app.services.document_scope_service import DocumentScopeService
 from app.utils.file_validation import validate_pdf_upload
 from app.utils.ids import generate_document_id
 from app.utils.text import normalize_whitespace
@@ -25,14 +26,17 @@ class DocumentService:
         pdf_loader: PDFLoaderClient,
         vectorstore_client: VectorStoreClient,
         registry_service: DocumentRegistryService,
+        scope_service: DocumentScopeService | None = None,
     ) -> None:
         self.settings = settings
         self.pdf_loader = pdf_loader
         self.vectorstore_client = vectorstore_client
         self.registry_service = registry_service
+        self.scope_service = scope_service or DocumentScopeService()
 
     def list_documents(self) -> list[DocumentRecord]:
-        return self.registry_service.list_documents()
+        records = self.registry_service.list_documents()
+        return self._backfill_document_scopes(records)
 
     def process_upload(
         self,
@@ -73,6 +77,8 @@ class DocumentService:
         if not prepared_pages:
             target_path.unlink(missing_ok=True)
             raise EmptyPdfError()
+        extracted_text = "\n".join(normalize_whitespace(getattr(page, "page_content", "")) for page in prepared_pages)
+        scope = self.scope_service.classify(extracted_text)
 
         try:
             chunked_documents = self._chunk_pages(prepared_pages)
@@ -84,10 +90,21 @@ class DocumentService:
                 "The PDF text was readable, but the chunking step rejected it."
             ) from exc
         vector_indexed = True
-        try:
-            self.vectorstore_client.add_documents(chunked_documents)
-        except Exception:
+        warnings: list[str] = []
+        skip_vector_indexing = (
+            total_pages > self.settings.max_vector_index_pages
+            or len(chunked_documents) > self.settings.max_vector_index_chunks
+        )
+        if skip_vector_indexing:
             vector_indexed = False
+            warnings.append(
+                "Large PDF saved for direct PDF workflows. Vector indexing was skipped to keep the app responsive."
+            )
+        else:
+            try:
+                self.vectorstore_client.add_documents(chunked_documents)
+            except Exception:
+                vector_indexed = False
 
         uploaded_at = datetime.now(UTC).isoformat()
         indexing_status = "indexed" if vector_indexed else "indexed_text_only"
@@ -99,6 +116,10 @@ class DocumentService:
             uploaded_at=uploaded_at,
             document_hash=document_hash,
             indexing_status=indexing_status,
+            scope_category=scope.scope_category,
+            scope_confidence=scope.scope_confidence,
+            scope_reason=scope.scope_reason,
+            eligible_for_medical_workflows=scope.eligible_for_medical_workflows,
         )
         try:
             self.registry_service.save_document(record)
@@ -108,6 +129,7 @@ class DocumentService:
         return DocumentUploadResponse(
             **record.model_dump(),
             status=indexing_status,
+            warnings=warnings,
         )
 
     def delete_document(self, document_id: str) -> DocumentDeleteResponse:
@@ -202,6 +224,58 @@ class DocumentService:
             metadata["section"] = self._infer_section(text)
             prepared.append(self._copy_langchain_document(page, text=text, metadata=metadata))
         return prepared
+
+    def _backfill_document_scopes(self, records: list[DocumentRecord]) -> list[DocumentRecord]:
+        updated_records: list[DocumentRecord] = []
+        for record in records:
+            if not self._needs_scope_backfill(record):
+                updated_records.append(record)
+                continue
+            sample = self._stored_pdf_text_sample(record.document_id)
+            scope = self.scope_service.classify(sample)
+            updated = record.model_copy(
+                update={
+                    "scope_category": scope.scope_category,
+                    "scope_confidence": scope.scope_confidence,
+                    "scope_reason": scope.scope_reason,
+                    "eligible_for_medical_workflows": scope.eligible_for_medical_workflows,
+                }
+            )
+            try:
+                self.registry_service.update_document(updated)
+            except Exception:
+                updated_records.append(record)
+            else:
+                updated_records.append(updated)
+        return updated_records
+
+    @staticmethod
+    def _needs_scope_backfill(record: DocumentRecord) -> bool:
+        return record.scope_category in {"unknown", "unknown_unverified"} and record.scope_confidence <= 0.25
+
+    def _stored_pdf_text_sample(self, document_id: str, *, max_pages: int = 20, max_chars: int = 20000) -> str:
+        file_path = self.settings.upload_dir / f"{document_id}.pdf"
+        if not file_path.exists():
+            return ""
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(str(file_path))
+            parts: list[str] = []
+            for page in list(reader.pages)[:max_pages]:
+                text = normalize_whitespace(page.extract_text() or "")
+                if text:
+                    parts.append(text)
+                if sum(len(part) for part in parts) >= max_chars:
+                    break
+            return "\n".join(parts)[:max_chars]
+        except Exception:
+            try:
+                pages = self.pdf_loader.load_pages(file_path)[:max_pages]
+            except Exception:
+                return ""
+            parts = [normalize_whitespace(getattr(page, "page_content", "")) for page in pages]
+            return "\n".join(part for part in parts if part)[:max_chars]
 
     def _chunk_pages(self, prepared_pages: list[Any]) -> list[Any]:
         from langchain_text_splitters import RecursiveCharacterTextSplitter

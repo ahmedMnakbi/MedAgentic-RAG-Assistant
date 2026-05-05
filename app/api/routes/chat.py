@@ -7,7 +7,9 @@ from fastapi import APIRouter, Request
 
 from app.schemas.chat import AskRequest, AskResponse
 from app.schemas.open_literature import OpenLiteratureSearchRequest
+from app.services.medical_scope_service import MedicalScopeService
 from app.services.rag_service import RetrievedChunk
+from app.utils.text import normalize_whitespace, strip_unsafe_guidance
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -32,6 +34,17 @@ def _build_no_source_response(
         enhanced_prompt=enhanced_prompt,
         warnings=["The uploaded documents did not contain a useful matching passage for this request."],
     )
+
+
+OUT_OF_SCOPE_ANSWER = (
+    "This document appears to be outside MARA's medical education scope. "
+    "MARA is designed for medical and health-learning content, so I can't summarize "
+    "or generate quizzes from this source."
+)
+UNVERIFIED_SCOPE_ANSWER = (
+    "This document has not been verified as medical or health-learning content, "
+    "so MARA will not use it for medical workflows by default."
+)
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -72,6 +85,14 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         )
 
     if mode == "general_education":
+        if MedicalScopeService.is_clearly_non_medical_request(payload.question):
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer="MARA is focused on medical and health-learning workflows, so I can't help with this non-medical request.",
+                safety=safety,
+                warnings=base_warnings + ["This request is outside MARA's medical education scope."],
+            )
         answer = services.general_education_service.answer(payload.question)
         answer, post_warnings, refused = _post_process_answer(services, answer)
         if refused:
@@ -146,8 +167,41 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             warnings=base_warnings + ["A URL was detected, but Assistant Lab does not import article URLs directly."],
         )
 
-    if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"} and not payload.document_ids:
-        if not services.document_service.list_documents():
+    scope_warnings: list[str] = []
+    if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"}:
+        scope_state = _document_scope_state(services, payload.document_ids)
+        scope_warnings = scope_state["warnings"]
+        if not scope_state["has_records"] and not payload.document_ids:
+            return _build_no_source_response(
+                payload,
+                safety,
+                mode_used=mode,
+                enhanced_prompt=enhanced_prompt,
+            )
+        if payload.document_ids and not scope_state["eligible_ids"] and scope_state["ineligible_count"]:
+            answer = OUT_OF_SCOPE_ANSWER if scope_state["non_medical_count"] else UNVERIFIED_SCOPE_ANSWER
+            return AskResponse(
+                status="refused",
+                mode_used=mode if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"} else "refuse",
+                answer=answer,
+                safety=safety,
+                enhanced_prompt=enhanced_prompt,
+                warnings=base_warnings + scope_warnings,
+            )
+        if not payload.document_ids and not scope_state["eligible_ids"]:
+            answer = (
+                "No eligible medical documents are available for this workflow. "
+                "MARA can only use uploaded sources that are medical, health-learning, or medical-adjacent."
+            )
+            return AskResponse(
+                status="no_source",
+                mode_used=mode,
+                answer=answer,
+                safety=safety,
+                enhanced_prompt=enhanced_prompt,
+                warnings=base_warnings + scope_warnings,
+            )
+        if not services.document_service.list_documents() and not payload.document_ids:
             return _build_no_source_response(
                 payload,
                 safety,
@@ -155,11 +209,27 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
                 enhanced_prompt=enhanced_prompt,
             )
 
-    use_selected_document_context = bool(payload.document_ids) and mode in {"summarize", "simplify", "quiz"}
+    use_direct_document_context = mode in {"summarize", "simplify", "quiz"} and (
+        bool(payload.document_ids) or services.router_service.references_uploaded_documents(payload.question.lower())
+    )
+    if _is_search_all_direct_workflow(services, payload, mode):
+        response = _run_search_all_direct_workflow(
+            services,
+            payload,
+            safety,
+            mode=mode,
+            scope_state=scope_state,
+            base_warnings=base_warnings,
+            scope_warnings=scope_warnings,
+            enhanced_prompt=enhanced_prompt,
+        )
+        if response is not None:
+            return response
+
     retrieved_chunks = _retrieve_document_chunks_for_chat(
         services,
         payload,
-        use_full_selected_context=use_selected_document_context,
+        use_direct_document_context=use_direct_document_context,
     )
     if not retrieved_chunks:
         return _build_no_source_response(
@@ -184,7 +254,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
 
     sources = services.rag_service.to_source_refs(retrieved_chunks)
     if mode == "summarize":
-        if use_selected_document_context:
+        if use_direct_document_context:
             answer = services.summarization_service.summarize_context(
                 payload.question,
                 packed_context.text,
@@ -212,11 +282,11 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             sources=sources,
             enhanced_prompt=enhanced_prompt,
-            warnings=base_warnings + packed_context.warnings + post_warnings,
+            warnings=base_warnings + scope_warnings + packed_context.warnings + post_warnings,
         )
 
     if mode == "simplify":
-        if use_selected_document_context:
+        if use_direct_document_context:
             answer = services.simplification_service.simplify_context(
                 payload.question,
                 packed_context.text,
@@ -244,11 +314,11 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             sources=sources,
             enhanced_prompt=enhanced_prompt,
-            warnings=base_warnings + packed_context.warnings + post_warnings,
+            warnings=base_warnings + scope_warnings + packed_context.warnings + post_warnings,
         )
 
     if mode == "quiz":
-        if use_selected_document_context:
+        if use_direct_document_context:
             quiz_items = services.quiz_service.generate_context(
                 payload.question,
                 packed_context.text,
@@ -267,7 +337,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             sources=sources,
             enhanced_prompt=enhanced_prompt,
             quiz_items=quiz_items,
-            warnings=base_warnings + packed_context.warnings,
+            warnings=base_warnings + scope_warnings + packed_context.warnings,
         )
 
     answer = services.answer_service.answer(
@@ -294,7 +364,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         safety=safety,
         sources=sources,
         enhanced_prompt=enhanced_prompt,
-        warnings=base_warnings + packed_context.warnings + post_warnings + grounding_warnings,
+        warnings=base_warnings + scope_warnings + packed_context.warnings + post_warnings + grounding_warnings,
     )
 
 
@@ -311,14 +381,245 @@ def _post_process_answer(services: SimpleNamespace, answer: str) -> tuple[str, l
     )
 
 
+def _is_search_all_direct_workflow(services: SimpleNamespace, payload: AskRequest, mode: str) -> bool:
+    return (
+        payload.document_ids is None
+        and mode in {"summarize", "simplify", "quiz"}
+        and services.router_service.references_uploaded_documents(payload.question.lower())
+    )
+
+
+def _run_search_all_direct_workflow(
+    services: SimpleNamespace,
+    payload: AskRequest,
+    safety,
+    *,
+    mode: str,
+    scope_state: dict,
+    base_warnings: list[str],
+    scope_warnings: list[str],
+    enhanced_prompt: str | None,
+) -> AskResponse | None:
+    eligible_records = scope_state["eligible_records"]
+    eligible_ids = [getattr(record, "document_id") for record in eligible_records if getattr(record, "document_id", None)]
+    if not eligible_ids:
+        answer = (
+            "No eligible medical documents are available for this workflow. "
+            "MARA can only use uploaded sources that are medical, health-learning, or medical-adjacent."
+        )
+        return AskResponse(
+            status="no_source",
+            mode_used=mode,
+            answer=answer,
+            safety=safety,
+            enhanced_prompt=enhanced_prompt,
+            warnings=base_warnings + scope_warnings,
+        )
+
+    chunks = _filter_registered_chunks(
+        services,
+        services.document_service.load_stored_document_chunks(document_ids=eligible_ids),
+    )
+    document_context, representative_chunks, workflow_warnings = _build_search_all_document_context(
+        services,
+        eligible_records,
+        chunks,
+    )
+    if not document_context:
+        return _build_no_source_response(
+            payload,
+            safety,
+            mode_used=mode,
+            enhanced_prompt=enhanced_prompt,
+        )
+
+    header = _build_search_all_inventory_header(scope_state, workflow_warnings)
+    sources = services.rag_service.to_source_refs(representative_chunks)
+    warnings = base_warnings + scope_warnings + workflow_warnings
+
+    if mode == "summarize":
+        answer = services.summarization_service.summarize_context(
+            payload.question,
+            document_context,
+            enhanced_prompt=enhanced_prompt,
+            context_label="Representative context from all eligible uploaded documents",
+        )
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                sources=sources,
+                warnings=base_warnings + post_warnings,
+            )
+        return AskResponse(
+            status="ok",
+            mode_used="summarize",
+            answer=f"{header}\n\n{answer}",
+            safety=safety,
+            sources=sources,
+            enhanced_prompt=enhanced_prompt,
+            warnings=warnings + post_warnings,
+        )
+
+    if mode == "simplify":
+        answer = services.simplification_service.simplify_context(
+            payload.question,
+            document_context,
+            enhanced_prompt=enhanced_prompt,
+            context_label="Representative context from all eligible uploaded documents",
+        )
+        answer, post_warnings, refused = _post_process_answer(services, answer)
+        if refused:
+            return AskResponse(
+                status="refused",
+                mode_used="refuse",
+                answer=answer,
+                safety=safety,
+                sources=sources,
+                warnings=base_warnings + post_warnings,
+            )
+        return AskResponse(
+            status="ok",
+            mode_used="simplify",
+            answer=f"{header}\n\n{answer}",
+            safety=safety,
+            sources=sources,
+            enhanced_prompt=enhanced_prompt,
+            warnings=warnings + post_warnings,
+        )
+
+    quiz_items = services.quiz_service.generate_context(
+        payload.question,
+        document_context,
+        enhanced_prompt=enhanced_prompt,
+        context_label="Representative context from all eligible uploaded documents",
+    )
+    return AskResponse(
+        status="ok",
+        mode_used="quiz",
+        answer=f"{header}\n\nGenerated study questions from the eligible uploaded medical documents.",
+        safety=safety,
+        sources=sources,
+        enhanced_prompt=enhanced_prompt,
+        quiz_items=quiz_items,
+        warnings=warnings,
+    )
+
+
+def _build_search_all_document_context(
+    services: SimpleNamespace,
+    eligible_records: list,
+    chunks: list[RetrievedChunk],
+) -> tuple[str, list[RetrievedChunk], list[str]]:
+    grouped_chunks = _group_chunks_by_document(chunks)
+    max_chars = max(int(getattr(services.rag_service.settings, "context_max_chars", 12000) or 12000), 3000)
+    per_document_budget = max(1200, min(4000, max_chars // max(len(eligible_records), 1)))
+    context_sections: list[str] = []
+    representative_chunks: list[RetrievedChunk] = []
+    warnings: list[str] = []
+
+    for record in eligible_records:
+        document_id = getattr(record, "document_id", "")
+        filename = getattr(record, "filename", document_id or "document")
+        document_chunks = grouped_chunks.get(document_id, [])
+        if not document_chunks:
+            warnings.append(f"No readable stored text was available for {filename}.")
+            continue
+        section, used_chunks, omitted_count = _representative_section_for_document(
+            filename,
+            document_chunks,
+            max_chars=per_document_budget,
+        )
+        if not section:
+            warnings.append(f"Readable text from {filename} was omitted by safety filtering.")
+            continue
+        context_sections.append(section)
+        representative_chunks.extend(used_chunks)
+        if omitted_count:
+            warnings.append(
+                f"{filename} was summarized from representative content; {omitted_count} chunk(s) were not included in the prompt budget."
+            )
+
+    return "\n\n".join(context_sections), representative_chunks, warnings
+
+
+def _group_chunks_by_document(chunks: list[RetrievedChunk]) -> dict[str, list[RetrievedChunk]]:
+    grouped: dict[str, list[RetrievedChunk]] = {}
+    for chunk in chunks:
+        document_id = str(chunk.metadata.get("document_id", ""))
+        if not document_id:
+            continue
+        grouped.setdefault(document_id, []).append(chunk)
+    for document_chunks in grouped.values():
+        document_chunks.sort(
+            key=lambda chunk: (
+                int(chunk.metadata.get("page", 0) or 0),
+                str(chunk.metadata.get("chunk_id", "")),
+            )
+        )
+    return grouped
+
+
+def _representative_section_for_document(
+    filename: str,
+    chunks: list[RetrievedChunk],
+    *,
+    max_chars: int,
+) -> tuple[str, list[RetrievedChunk], int]:
+    parts = [f"Document: {filename}"]
+    used_chunks: list[RetrievedChunk] = []
+    current_chars = len(parts[0])
+    for chunk in chunks:
+        safe_text = normalize_whitespace(strip_unsafe_guidance(chunk.text))
+        if not safe_text:
+            continue
+        page = int(chunk.metadata.get("page", 0) or 0) + 1
+        chunk_id = str(chunk.metadata.get("chunk_id", "chunk"))
+        block = f"[{filename}, page {page}, chunk {chunk_id}]\n{safe_text}"
+        remaining = max_chars - current_chars - 2
+        if remaining <= 0:
+            break
+        if len(block) > remaining:
+            if used_chunks:
+                break
+            block = block[:remaining].rstrip()
+        parts.append(block)
+        used_chunks.append(chunk)
+        current_chars += len(block) + 2
+    omitted_count = max(len(chunks) - len(used_chunks), 0)
+    return "\n\n".join(parts) if used_chunks else "", used_chunks, omitted_count
+
+
+def _build_search_all_inventory_header(scope_state: dict, workflow_warnings: list[str]) -> str:
+    lines = ["Included medical-scope documents:"]
+    for record in scope_state["eligible_records"]:
+        lines.append(f"- {getattr(record, 'filename', getattr(record, 'document_id', 'document'))}")
+    if scope_state["ineligible_records"]:
+        lines.append("")
+        lines.append("Skipped out-of-scope or unverified documents:")
+        for record in scope_state["ineligible_records"]:
+            reason = getattr(record, "scope_reason", None) or getattr(record, "scope_category", "not verified")
+            filename = getattr(record, "filename", getattr(record, "document_id", "document"))
+            lines.append(f"- {filename} ({reason})")
+    if workflow_warnings:
+        lines.append("")
+        lines.append("Coverage notes:")
+        for warning in workflow_warnings:
+            lines.append(f"- {warning}")
+    return "\n".join(lines)
+
+
 def _retrieve_document_chunks_for_chat(
     services: SimpleNamespace,
     payload: AskRequest,
     *,
-    use_full_selected_context: bool,
+    use_direct_document_context: bool,
 ) -> list[RetrievedChunk]:
     try:
-        if use_full_selected_context:
+        if use_direct_document_context:
             chunks = services.rag_service.retrieve_document_chunks(document_ids=payload.document_ids)
         else:
             chunks = services.rag_service.retrieve(
@@ -333,24 +634,26 @@ def _retrieve_document_chunks_for_chat(
     if chunks:
         return chunks
 
-    if use_full_selected_context:
-        return services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
+    if use_direct_document_context:
+        return _filter_registered_chunks(
+            services,
+            services.document_service.load_stored_document_chunks(document_ids=payload.document_ids),
+        )
     if services.router_service.references_uploaded_documents(payload.question.lower()):
-        chunks = services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
+        chunks = _filter_registered_chunks(
+            services,
+            services.document_service.load_stored_document_chunks(document_ids=payload.document_ids),
+        )
         return _rank_fallback_chunks(payload.question, chunks, top_k=payload.top_k)
     return []
 
 
 def _filter_registered_chunks(services: SimpleNamespace, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     try:
-        known_ids = {
-            document_id
-            for document_id in (
-                getattr(document, "document_id", None)
-                for document in services.document_service.list_documents()
-            )
-            if document_id
-        }
+        state = _document_scope_state(services, None)
+        if not state["has_records"]:
+            return chunks
+        known_ids = state["eligible_ids"]
     except Exception:
         return chunks
     return [
@@ -358,6 +661,57 @@ def _filter_registered_chunks(services: SimpleNamespace, chunks: list[RetrievedC
         for chunk in chunks
         if str(chunk.metadata.get("document_id", "")) in known_ids
     ]
+
+
+def _document_scope_state(services: SimpleNamespace, document_ids: list[str] | None) -> dict:
+    records = services.document_service.list_documents()
+    selected_ids = set(document_ids or [])
+    scoped_records = [record for record in records if not selected_ids or getattr(record, "document_id", None) in selected_ids]
+    eligible_records = [
+        record
+        for record in scoped_records
+        if getattr(record, "eligible_for_medical_workflows", True)
+    ]
+    ineligible_records = [
+        record
+        for record in scoped_records
+        if not getattr(record, "eligible_for_medical_workflows", True)
+    ]
+    non_medical_records = [
+        record
+        for record in ineligible_records
+        if getattr(record, "scope_category", "unknown_unverified") == "non_medical"
+    ]
+    unverified_records = [
+        record
+        for record in ineligible_records
+        if getattr(record, "scope_category", "unknown_unverified") in {"unknown", "unknown_unverified"}
+    ]
+    unknown_records = [
+        record
+        for record in eligible_records
+        if getattr(record, "scope_category", "unknown") == "unknown"
+        and hasattr(record, "eligible_for_medical_workflows")
+    ]
+    warnings: list[str] = []
+    if ineligible_records:
+        count = len(ineligible_records)
+        warnings.append(f"Skipped {count} document{'s' if count != 1 else ''} because they are not verified as medical-scope sources.")
+    if unknown_records:
+        count = len(unknown_records)
+        warnings.append(f"{count} document{'s have' if count != 1 else ' has'} unknown scope and will be used with caution.")
+    return {
+        "has_records": bool(scoped_records),
+        "eligible_records": eligible_records,
+        "ineligible_records": ineligible_records,
+        "eligible_ids": {getattr(record, "document_id") for record in eligible_records if getattr(record, "document_id", None)},
+        "ineligible_count": len(ineligible_records),
+        "out_of_scope_count": len(ineligible_records),
+        "non_medical_count": len(non_medical_records),
+        "unverified_count": len(unverified_records),
+        "unknown_count": len(unknown_records),
+        "warnings": warnings,
+    }
 
 
 def _rank_fallback_chunks(question: str, chunks: list[RetrievedChunk], *, top_k: int) -> list[RetrievedChunk]:
