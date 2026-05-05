@@ -13,6 +13,7 @@ class DocumentWorkflowService:
         simplification_service,
         quiz_service,
         answer_service,
+        document_service=None,
     ) -> None:
         self.rag_service = rag_service
         self.safety_service = safety_service
@@ -20,6 +21,7 @@ class DocumentWorkflowService:
         self.simplification_service = simplification_service
         self.quiz_service = quiz_service
         self.answer_service = answer_service
+        self.document_service = document_service
 
     def run(self, request: DocumentWorkflowRequest) -> DocumentWorkflowResponse:
         question = request.question or self._default_question(request.action)
@@ -31,8 +33,28 @@ class DocumentWorkflowService:
                 answer=self.safety_service.refusal_message(safety.category),
                 warnings=["Whole-document workflows are educational only."],
             )
+        eligible_ids, scope_warnings, blocked = self._eligible_document_ids(request.document_ids)
+        if blocked:
+            return DocumentWorkflowResponse(
+                status="refused",
+                action=request.action,
+                answer=(
+                    "This document appears to be outside MARA's medical education scope. "
+                    "MARA is designed for medical and health-learning content, so I can't summarize "
+                    "or generate quizzes from this source."
+                ),
+                warnings=scope_warnings,
+            )
+        if eligible_ids is not None and not eligible_ids:
+            return DocumentWorkflowResponse(
+                status="no_source",
+                action=request.action,
+                answer="No eligible medical documents are available for this whole-document workflow.",
+                warnings=scope_warnings,
+            )
+
         chunks = self.rag_service.retrieve_document_chunks(
-            document_ids=request.document_ids,
+            document_ids=eligible_ids,
             page_from=request.page_from,
             page_to=request.page_to,
         )
@@ -41,7 +63,7 @@ class DocumentWorkflowService:
                 status="no_source",
                 action=request.action,
                 answer="No indexed document chunks were available for this whole-document workflow.",
-                warnings=["Upload a text-based PDF first, or narrow the requested page range."],
+                warnings=scope_warnings + ["Upload a text-based PDF first, or narrow the requested page range."],
             )
         packed = self.rag_service.pack_context(chunks)
         if not packed.text:
@@ -49,7 +71,7 @@ class DocumentWorkflowService:
                 status="no_source",
                 action=request.action,
                 answer="No usable whole-document context remained after safety/context packing.",
-                warnings=packed.warnings,
+                warnings=scope_warnings + packed.warnings,
             )
         if request.action in {"summary", "page_range_summary"}:
             answer = self.summarization_service.summarize_context(
@@ -73,7 +95,7 @@ class DocumentWorkflowService:
                 status="ok",
                 action=request.action,
                 answer="Generated whole-document study quiz questions.",
-                warnings=packed.warnings,
+                warnings=scope_warnings + packed.warnings,
                 source_count=len(chunks),
                 quiz_items=[item.model_dump() for item in quiz_items],
             )
@@ -87,9 +109,30 @@ class DocumentWorkflowService:
             status="ok",
             action=request.action,
             answer=answer,
-            warnings=packed.warnings,
+            warnings=scope_warnings + packed.warnings,
             source_count=len(chunks),
         )
+
+    def _eligible_document_ids(self, document_ids: list[str] | None) -> tuple[list[str] | None, list[str], bool]:
+        if not self.document_service:
+            return document_ids, [], False
+        records = self.document_service.list_documents()
+        selected_ids = set(document_ids or [])
+        scoped = [record for record in records if not selected_ids or record.document_id in selected_ids]
+        eligible = [record for record in scoped if record.eligible_for_medical_workflows]
+        out_of_scope = [record for record in scoped if not record.eligible_for_medical_workflows]
+        warnings = []
+        if out_of_scope:
+            count = len(out_of_scope)
+            warnings.append(f"Skipped {count} out-of-scope document{'s' if count != 1 else ''}.")
+        unknown = [record for record in eligible if record.scope_category == "unknown"]
+        if unknown:
+            count = len(unknown)
+            warnings.append(f"{count} document{'s have' if count != 1 else ' has'} unknown scope and will be used with caution.")
+        blocked = bool(document_ids and out_of_scope)
+        if document_ids is None:
+            return [record.document_id for record in eligible], warnings, False
+        return [record.document_id for record in eligible], warnings, blocked
 
     @staticmethod
     def _default_question(action: str) -> str:

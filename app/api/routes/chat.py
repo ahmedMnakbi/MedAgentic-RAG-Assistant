@@ -34,6 +34,13 @@ def _build_no_source_response(
     )
 
 
+OUT_OF_SCOPE_ANSWER = (
+    "This document appears to be outside MARA's medical education scope. "
+    "MARA is designed for medical and health-learning content, so I can't summarize "
+    "or generate quizzes from this source."
+)
+
+
 @router.post("/ask", response_model=AskResponse)
 async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
     services = _get_services(request)
@@ -146,8 +153,40 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             warnings=base_warnings + ["A URL was detected, but Assistant Lab does not import article URLs directly."],
         )
 
-    if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"} and not payload.document_ids:
-        if not services.document_service.list_documents():
+    scope_warnings: list[str] = []
+    if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"}:
+        scope_state = _document_scope_state(services, payload.document_ids)
+        scope_warnings = scope_state["warnings"]
+        if not scope_state["has_records"] and not payload.document_ids:
+            return _build_no_source_response(
+                payload,
+                safety,
+                mode_used=mode,
+                enhanced_prompt=enhanced_prompt,
+            )
+        if payload.document_ids and scope_state["out_of_scope_count"]:
+            return AskResponse(
+                status="refused",
+                mode_used=mode if mode in {"rag", "document_rag", "summarize", "simplify", "quiz"} else "refuse",
+                answer=OUT_OF_SCOPE_ANSWER,
+                safety=safety,
+                enhanced_prompt=enhanced_prompt,
+                warnings=base_warnings + scope_warnings,
+            )
+        if not payload.document_ids and not scope_state["eligible_ids"]:
+            answer = (
+                "No eligible medical documents are available for this workflow. "
+                "MARA can only use uploaded sources that are medical, health-learning, or medical-adjacent."
+            )
+            return AskResponse(
+                status="no_source",
+                mode_used=mode,
+                answer=answer,
+                safety=safety,
+                enhanced_prompt=enhanced_prompt,
+                warnings=base_warnings + scope_warnings,
+            )
+        if not services.document_service.list_documents() and not payload.document_ids:
             return _build_no_source_response(
                 payload,
                 safety,
@@ -155,11 +194,13 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
                 enhanced_prompt=enhanced_prompt,
             )
 
-    use_selected_document_context = bool(payload.document_ids) and mode in {"summarize", "simplify", "quiz"}
+    use_direct_document_context = mode in {"summarize", "simplify", "quiz"} and (
+        bool(payload.document_ids) or services.router_service.references_uploaded_documents(payload.question.lower())
+    )
     retrieved_chunks = _retrieve_document_chunks_for_chat(
         services,
         payload,
-        use_full_selected_context=use_selected_document_context,
+        use_direct_document_context=use_direct_document_context,
     )
     if not retrieved_chunks:
         return _build_no_source_response(
@@ -184,7 +225,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
 
     sources = services.rag_service.to_source_refs(retrieved_chunks)
     if mode == "summarize":
-        if use_selected_document_context:
+        if use_direct_document_context:
             answer = services.summarization_service.summarize_context(
                 payload.question,
                 packed_context.text,
@@ -212,11 +253,11 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             sources=sources,
             enhanced_prompt=enhanced_prompt,
-            warnings=base_warnings + packed_context.warnings + post_warnings,
+            warnings=base_warnings + scope_warnings + packed_context.warnings + post_warnings,
         )
 
     if mode == "simplify":
-        if use_selected_document_context:
+        if use_direct_document_context:
             answer = services.simplification_service.simplify_context(
                 payload.question,
                 packed_context.text,
@@ -244,11 +285,11 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             safety=safety,
             sources=sources,
             enhanced_prompt=enhanced_prompt,
-            warnings=base_warnings + packed_context.warnings + post_warnings,
+            warnings=base_warnings + scope_warnings + packed_context.warnings + post_warnings,
         )
 
     if mode == "quiz":
-        if use_selected_document_context:
+        if use_direct_document_context:
             quiz_items = services.quiz_service.generate_context(
                 payload.question,
                 packed_context.text,
@@ -267,7 +308,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             sources=sources,
             enhanced_prompt=enhanced_prompt,
             quiz_items=quiz_items,
-            warnings=base_warnings + packed_context.warnings,
+            warnings=base_warnings + scope_warnings + packed_context.warnings,
         )
 
     answer = services.answer_service.answer(
@@ -294,7 +335,7 @@ async def ask_question(payload: AskRequest, request: Request) -> AskResponse:
         safety=safety,
         sources=sources,
         enhanced_prompt=enhanced_prompt,
-        warnings=base_warnings + packed_context.warnings + post_warnings + grounding_warnings,
+        warnings=base_warnings + scope_warnings + packed_context.warnings + post_warnings + grounding_warnings,
     )
 
 
@@ -315,10 +356,10 @@ def _retrieve_document_chunks_for_chat(
     services: SimpleNamespace,
     payload: AskRequest,
     *,
-    use_full_selected_context: bool,
+    use_direct_document_context: bool,
 ) -> list[RetrievedChunk]:
     try:
-        if use_full_selected_context:
+        if use_direct_document_context:
             chunks = services.rag_service.retrieve_document_chunks(document_ids=payload.document_ids)
         else:
             chunks = services.rag_service.retrieve(
@@ -333,24 +374,26 @@ def _retrieve_document_chunks_for_chat(
     if chunks:
         return chunks
 
-    if use_full_selected_context:
-        return services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
+    if use_direct_document_context:
+        return _filter_registered_chunks(
+            services,
+            services.document_service.load_stored_document_chunks(document_ids=payload.document_ids),
+        )
     if services.router_service.references_uploaded_documents(payload.question.lower()):
-        chunks = services.document_service.load_stored_document_chunks(document_ids=payload.document_ids)
+        chunks = _filter_registered_chunks(
+            services,
+            services.document_service.load_stored_document_chunks(document_ids=payload.document_ids),
+        )
         return _rank_fallback_chunks(payload.question, chunks, top_k=payload.top_k)
     return []
 
 
 def _filter_registered_chunks(services: SimpleNamespace, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     try:
-        known_ids = {
-            document_id
-            for document_id in (
-                getattr(document, "document_id", None)
-                for document in services.document_service.list_documents()
-            )
-            if document_id
-        }
+        state = _document_scope_state(services, None)
+        if not state["has_records"]:
+            return chunks
+        known_ids = state["eligible_ids"]
     except Exception:
         return chunks
     return [
@@ -358,6 +401,42 @@ def _filter_registered_chunks(services: SimpleNamespace, chunks: list[RetrievedC
         for chunk in chunks
         if str(chunk.metadata.get("document_id", "")) in known_ids
     ]
+
+
+def _document_scope_state(services: SimpleNamespace, document_ids: list[str] | None) -> dict:
+    records = services.document_service.list_documents()
+    selected_ids = set(document_ids or [])
+    scoped_records = [record for record in records if not selected_ids or getattr(record, "document_id", None) in selected_ids]
+    eligible_records = [
+        record
+        for record in scoped_records
+        if getattr(record, "eligible_for_medical_workflows", True)
+    ]
+    out_of_scope_records = [
+        record
+        for record in scoped_records
+        if not getattr(record, "eligible_for_medical_workflows", True)
+    ]
+    unknown_records = [
+        record
+        for record in eligible_records
+        if getattr(record, "scope_category", "unknown") == "unknown"
+        and hasattr(record, "eligible_for_medical_workflows")
+    ]
+    warnings: list[str] = []
+    if out_of_scope_records:
+        count = len(out_of_scope_records)
+        warnings.append(f"Skipped {count} out-of-scope document{'s' if count != 1 else ''}.")
+    if unknown_records:
+        count = len(unknown_records)
+        warnings.append(f"{count} document{'s have' if count != 1 else ' has'} unknown scope and will be used with caution.")
+    return {
+        "has_records": bool(scoped_records),
+        "eligible_ids": {getattr(record, "document_id") for record in eligible_records if getattr(record, "document_id", None)},
+        "out_of_scope_count": len(out_of_scope_records),
+        "unknown_count": len(unknown_records),
+        "warnings": warnings,
+    }
 
 
 def _rank_fallback_chunks(question: str, chunks: list[RetrievedChunk], *, top_k: int) -> list[RetrievedChunk]:

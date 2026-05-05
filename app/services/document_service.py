@@ -12,6 +12,7 @@ from app.core.exceptions import EmptyPdfError, ExternalServiceError, InvalidPdfE
 from app.schemas.documents import DocumentDeleteResponse, DocumentRecord, DocumentUploadResponse
 from app.services.rag_service import RetrievedChunk
 from app.services.document_registry_service import DocumentRegistryService
+from app.services.document_scope_service import DocumentScopeService
 from app.utils.file_validation import validate_pdf_upload
 from app.utils.ids import generate_document_id
 from app.utils.text import normalize_whitespace
@@ -25,11 +26,13 @@ class DocumentService:
         pdf_loader: PDFLoaderClient,
         vectorstore_client: VectorStoreClient,
         registry_service: DocumentRegistryService,
+        scope_service: DocumentScopeService | None = None,
     ) -> None:
         self.settings = settings
         self.pdf_loader = pdf_loader
         self.vectorstore_client = vectorstore_client
         self.registry_service = registry_service
+        self.scope_service = scope_service or DocumentScopeService()
 
     def list_documents(self) -> list[DocumentRecord]:
         return self.registry_service.list_documents()
@@ -73,6 +76,8 @@ class DocumentService:
         if not prepared_pages:
             target_path.unlink(missing_ok=True)
             raise EmptyPdfError()
+        extracted_text = "\n".join(normalize_whitespace(getattr(page, "page_content", "")) for page in prepared_pages)
+        scope = self.scope_service.classify(extracted_text)
 
         try:
             chunked_documents = self._chunk_pages(prepared_pages)
@@ -99,6 +104,10 @@ class DocumentService:
             uploaded_at=uploaded_at,
             document_hash=document_hash,
             indexing_status=indexing_status,
+            scope_category=scope.scope_category,
+            scope_confidence=scope.scope_confidence,
+            scope_reason=scope.scope_reason,
+            eligible_for_medical_workflows=scope.eligible_for_medical_workflows,
         )
         try:
             self.registry_service.save_document(record)

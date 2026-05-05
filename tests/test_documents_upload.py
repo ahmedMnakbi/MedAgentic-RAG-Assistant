@@ -60,6 +60,8 @@ def test_upload_document_success(client, app, monkeypatch):
     assert payload["filename"] == "notes.pdf"
     assert payload["page_count"] == 1
     assert payload["chunk_count"] == 1
+    assert payload["scope_category"] == "medical"
+    assert payload["eligible_for_medical_workflows"] is True
 
 
 def test_upload_normal_text_pdf_indexes_successfully(client, app, monkeypatch):
@@ -79,6 +81,7 @@ def test_upload_normal_text_pdf_indexes_successfully(client, app, monkeypatch):
     payload = response.json()
     assert payload["status"] == "indexed"
     assert payload["chunk_count"] >= 1
+    assert payload["scope_category"] == "medical"
     assert captured["documents"]
     assert all(value is not None for doc in captured["documents"] for value in doc.metadata.values())
 
@@ -99,6 +102,7 @@ def test_upload_vector_failure_degrades_to_text_only_record(client, app, monkeyp
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "indexed_text_only"
+    assert payload["eligible_for_medical_workflows"] is True
     after = app.state.services.document_service.list_documents()
     assert len(after) == len(before) + 1
 

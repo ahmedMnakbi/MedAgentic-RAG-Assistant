@@ -45,8 +45,12 @@ def test_prompt_enhancer_send_to_assistant_uses_optimized_task_not_raw_or_packag
     assert "cleanOpenLiteratureQuery(payload)" in script
     assert "fullTextInput.checked = resultShell.dataset.fullTextRequired === \"true\";" in script
     assert "formatIndexingStatus(doc.indexing_status)" in script
+    assert "formatDocumentScope(doc.scope_category)" in script
     assert "Vector indexed" in script
     assert "Text fallback" in script
+    assert "Medical-adjacent" in script
+    assert "Out of scope" in script
+    assert "Unknown scope" in script
     assert "danger-outline-button" in script
     assert "enhance_prompt: false" in script
     assert "enhance-prompt-toggle" not in script

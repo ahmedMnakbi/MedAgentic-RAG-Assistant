@@ -74,7 +74,7 @@ function renderDocuments() {
             <span>ID: <span class="mono">${escapeHtml(doc.document_id)}</span></span>
             <span>${doc.page_count} pages</span>
             <span>${doc.chunk_count} chunks</span>
-            <span>${escapeHtml(formatIndexingStatus(doc.indexing_status))}</span>
+            <span>${escapeHtml(formatIndexingStatus(doc.indexing_status))} · ${escapeHtml(formatDocumentScope(doc.scope_category))}</span>
           </div>
           <p class="microcopy">Uploaded ${new Date(doc.uploaded_at).toLocaleString()}</p>
         </article>
@@ -111,6 +111,16 @@ function formatIndexingStatus(status) {
     indexed_text_only: "Text fallback",
   };
   return labels[status] || "Vector indexed";
+}
+
+function formatDocumentScope(scope) {
+  const labels = {
+    medical: "Medical",
+    medical_adjacent: "Medical-adjacent",
+    non_medical: "Out of scope",
+    unknown: "Unknown scope",
+  };
+  return labels[scope] || "Unknown scope";
 }
 
 function cleanOpenLiteratureQuery(payload) {
